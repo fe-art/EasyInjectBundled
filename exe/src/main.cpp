@@ -2543,10 +2543,15 @@ struct InstallResult {
 
 /**
  * Build the prelaunch command for the exe. Since we're an exe, no Java needed!
- * Format: "$INST_DIR/<subfolderPrefix><exeFilename>" --prelaunch
+ * Default format: \"$INST_DIR/<subfolderPrefix><exeFilename>\" --prelaunch
+ * ATLauncher format: "$INST_DIR/<subfolderPrefix><exeFilename>" --prelaunch
  */
-static std::string buildPreLaunchCommand(const std::string& exeRelativePath) {
-    return "\\\"$INST_DIR/" + exeRelativePath + "\\\" --prelaunch";
+static std::string buildPreLaunchCommand(const std::string& exeRelativePath, bool quoteExecutablePath = true) {
+    std::string exePath = "$INST_DIR/" + exeRelativePath;
+    if (quoteExecutablePath) {
+        return "\\\"" + exePath + "\\\" --prelaunch";
+    }
+    return "\"" + exePath + "\" --prelaunch";
 }
 
 static bool isOurSegment(const std::string& segment) {
@@ -3295,6 +3300,7 @@ static int runInstallMode() {
 
     std::string exeRelPath = subfolderPrefix + toUtf8(exeFilename);
     std::string prelaunchCmd = InstanceConfig::buildPreLaunchCommand(exeRelPath);
+    std::string prelaunchCmdAtLauncher = InstanceConfig::buildPreLaunchCommand(exeRelPath, false);
 
     // Look for instance.cfg (MultiMC/Prism) or instance.json (ATLauncher)
     fs::path cfgFile = instanceDir / L"instance.cfg";
@@ -3335,7 +3341,7 @@ static int runInstallMode() {
             InstanceConfig::restartLaunchers();
         }
     } else if (fs::exists(jsonFile)) {
-        std::string atlCmd = prelaunchCmd + " " + toUtf8(PRELAUNCH_ARG);
+        std::string atlCmd = prelaunchCmdAtLauncher + " " + toUtf8(PRELAUNCH_ARG);
         auto result = InstanceConfig::installPreLaunchCommandJson(jsonFile, atlCmd);
         if (result.success) {
             InstanceConfig::ensurePrelaunchTxtExists(instanceDir);

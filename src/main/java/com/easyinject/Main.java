@@ -237,6 +237,7 @@ public class Main {
         // Build the prelaunch command with appropriate path
         String jarRelativePath = subfolderPrefix + jarFilename;
         String prelaunchCommand = "\\\"$INST_JAVA\\\" -jar \\\"$INST_DIR/" + jarRelativePath + "\\\"";
+        String prelaunchCommandAtLauncher = "\"$INST_JAVA\" -jar \"$INST_DIR/" + jarRelativePath + "\"";
         
         // Look for instance.cfg (MultiMC/Prism) or instance.json (ATLauncher)
         File instanceCfg = (instanceDir != null) ? new File(instanceDir, "instance.cfg") : null;
@@ -253,7 +254,7 @@ public class Main {
             }
         } else if (instanceJson != null && instanceJson.exists() && instanceJson.isFile()) {
             // ATLauncher - install via instance.json
-            InstallResult result = installPreLaunchCommandJson(instanceJson, prelaunchCommand + " " + PRELAUNCH_ARG);
+            InstallResult result = installPreLaunchCommandJson(instanceJson, prelaunchCommandAtLauncher + " " + PRELAUNCH_ARG);
             if (result.success) {
                 ensurePrelaunchTxtExists(instanceDir);
                 showSuccessDialog(jarRelativePath, instanceJson, instanceDir);
