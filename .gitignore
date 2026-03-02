@@ -28,3 +28,15 @@ exe/*.vcxproj
 exe/*.vcxproj.filters
 exe/*.vcxproj.user
 exe/cmake_install.cmake
+
+exe-lite/build
+exe-lite/CMakeFiles
+exe-lite/EasyInjectExe.dir
+exe-lite/Release
+exe-lite/x64
+exe-lite/CMakeCache.txt
+exe-lite/*.sln
+exe-lite/*.vcxproj
+exe-lite/*.vcxproj.filters
+exe-lite/*.vcxproj.user
+exe-lite/cmake_install.cmake
