@@ -40,3 +40,17 @@ exe-lite/*.vcxproj
 exe-lite/*.vcxproj.filters
 exe-lite/*.vcxproj.user
 exe-lite/cmake_install.cmake
+
+toolscreen-installer-exe/build
+toolscreen-installer-exe/build-*
+toolscreen-installer-exe/CMakeFiles
+toolscreen-installer-exe/ToolscreenInstallerExe.dir
+toolscreen-installer-exe/Release
+toolscreen-installer-exe/Debug
+toolscreen-installer-exe/x64
+toolscreen-installer-exe/CMakeCache.txt
+toolscreen-installer-exe/*.sln
+toolscreen-installer-exe/*.vcxproj
+toolscreen-installer-exe/*.vcxproj.filters
+toolscreen-installer-exe/*.vcxproj.user
+toolscreen-installer-exe/cmake_install.cmake
