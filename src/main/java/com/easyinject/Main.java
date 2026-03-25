@@ -67,6 +67,10 @@ public class Main {
     private static final String DEFENDER_ELEVATED_SELFJAR_ARG = "--defender-elevated-selfjar";
     private static final String DEFENDER_ELEVATED_OUT_ARG = "--defender-elevated-out";
     private static final String DLL_RESOURCE_PATH = "dlls/";
+
+    private static final int LAUNCHER_STANDARD = 0;
+    private static final int LAUNCHER_MODRINTH = 1;
+    private static final int LAUNCHER_CANCEL = 2;
     private static final String LOGGER_DLL_NAME = "liblogger_x64.dll";
     private static final String LOG_FILE = "injector.log";
     private static final int POLL_INTERVAL_MS = 500;
@@ -223,47 +227,169 @@ public class Main {
         // Determine if JAR is in a minecraft/.minecraft subfolder
         String subfolderPrefix = "";
         File instanceDir = jarDir;
-        
+
         if (jarDir != null) {
             String dirName = jarDir.getName().toLowerCase();
             if (dirName.equals("minecraft") || dirName.equals(".minecraft")) {
-                // JAR is in minecraft subfolder, look one level up for instance config
                 instanceDir = jarDir.getParentFile();
-                // Include the subfolder in the command path
                 subfolderPrefix = jarDir.getName() + "/";
             }
         }
-        
-        // Build the prelaunch command with appropriate path
+
         String jarRelativePath = subfolderPrefix + jarFilename;
         String prelaunchCommand = "\\\"$INST_JAVA\\\" -jar \\\"$INST_DIR/" + jarRelativePath + "\\\"";
         String prelaunchCommandAtLauncher = "\"$INST_JAVA\" -jar \"$INST_DIR/" + jarRelativePath + "\"";
-        
-        // Look for instance.cfg (MultiMC/Prism) or instance.json (ATLauncher)
-        File instanceCfg = (instanceDir != null) ? new File(instanceDir, "instance.cfg") : null;
-        File instanceJson = (instanceDir != null) ? new File(instanceDir, "instance.json") : null;
-        
-        if (instanceCfg != null && instanceCfg.exists() && instanceCfg.isFile()) {
-            // MultiMC / Prism Launcher - install via instance.cfg
-            InstallResult result = installPreLaunchCommand(instanceCfg, prelaunchCommand);
+
+        // Show launcher picker if Modrinth is detected alongside standard launchers
+        int launcherChoice = showLauncherPickerDialog();
+        if (launcherChoice == LAUNCHER_CANCEL) {
+            System.out.println("Installation cancelled by user.");
+            System.exit(0);
+        }
+
+        if (launcherChoice == LAUNCHER_MODRINTH) {
+            InstallResult result = installForModrinth(stableJarForLauncher);
             if (result.success) {
-                ensurePrelaunchTxtExists(instanceDir);
-                showSuccessDialog(jarRelativePath, instanceCfg, instanceDir);
-            } else {
-                showErrorDialog(result.error);
-            }
-        } else if (instanceJson != null && instanceJson.exists() && instanceJson.isFile()) {
-            // ATLauncher - install via instance.json
-            InstallResult result = installPreLaunchCommandJson(instanceJson, prelaunchCommandAtLauncher + " " + PRELAUNCH_ARG);
-            if (result.success) {
-                ensurePrelaunchTxtExists(instanceDir);
-                showSuccessDialog(jarRelativePath, instanceJson, instanceDir);
+                showSuccessDialog(jarRelativePath, null, instanceDir);
             } else {
                 showErrorDialog(result.error);
             }
         } else {
-            // No instance config found - show the setup warning
-            showNoInstanceCfgWarning(prelaunchCommand);
+            File instanceCfg = (instanceDir != null) ? new File(instanceDir, "instance.cfg") : null;
+            File instanceJson = (instanceDir != null) ? new File(instanceDir, "instance.json") : null;
+
+            if (instanceCfg != null && instanceCfg.exists() && instanceCfg.isFile()) {
+                InstallResult result = installPreLaunchCommand(instanceCfg, prelaunchCommand);
+                if (result.success) {
+                    ensurePrelaunchTxtExists(instanceDir);
+                    showSuccessDialog(jarRelativePath, instanceCfg, instanceDir);
+                } else {
+                    showErrorDialog(result.error);
+                }
+            } else if (instanceJson != null && instanceJson.exists() && instanceJson.isFile()) {
+                InstallResult result = installPreLaunchCommandJson(instanceJson, prelaunchCommandAtLauncher + " " + PRELAUNCH_ARG);
+                if (result.success) {
+                    ensurePrelaunchTxtExists(instanceDir);
+                    showSuccessDialog(jarRelativePath, instanceJson, instanceDir);
+                } else {
+                    showErrorDialog(result.error);
+                }
+            } else {
+                showNoInstanceCfgWarning(prelaunchCommand);
+            }
+        }
+    }
+
+    private static int showLauncherPickerDialog() {
+        final int[] result = { LAUNCHER_CANCEL };
+        final javax.swing.JDialog dialog = new javax.swing.JDialog((java.awt.Frame) null, PROJECT_NAME, true);
+        dialog.setDefaultCloseOperation(javax.swing.WindowConstants.DISPOSE_ON_CLOSE);
+        dialog.setResizable(false);
+
+        javax.swing.JPanel panel = new javax.swing.JPanel();
+        panel.setLayout(new java.awt.BorderLayout(10, 10));
+        panel.setBorder(javax.swing.BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        panel.setBackground(new java.awt.Color(30, 30, 30));
+
+        javax.swing.JPanel buttonPanel = new javax.swing.JPanel(new java.awt.GridLayout(1, 2, 12, 0));
+        buttonPanel.setOpaque(false);
+
+        javax.swing.JButton standardBtn = new javax.swing.JButton();
+        standardBtn.setPreferredSize(new java.awt.Dimension(140, 140));
+        standardBtn.setBackground(new java.awt.Color(59, 130, 246));
+        standardBtn.setOpaque(true);
+        standardBtn.setBorderPainted(false);
+        standardBtn.setFocusPainted(false);
+        standardBtn.setToolTipText("PrismLauncher / MultiMC / ATLauncher");
+        standardBtn.addActionListener(e -> { result[0] = LAUNCHER_STANDARD; dialog.dispose(); });
+
+        javax.swing.JButton modrinthBtn = new javax.swing.JButton();
+        modrinthBtn.setPreferredSize(new java.awt.Dimension(140, 140));
+        modrinthBtn.setBackground(new java.awt.Color(30, 173, 86));
+        modrinthBtn.setOpaque(true);
+        modrinthBtn.setBorderPainted(false);
+        modrinthBtn.setFocusPainted(false);
+        modrinthBtn.setToolTipText("Modrinth App");
+        modrinthBtn.addActionListener(e -> { result[0] = LAUNCHER_MODRINTH; dialog.dispose(); });
+
+        buttonPanel.add(standardBtn);
+        buttonPanel.add(modrinthBtn);
+
+        javax.swing.JButton cancelBtn = new javax.swing.JButton("Cancel");
+        cancelBtn.setFocusPainted(false);
+        cancelBtn.addActionListener(e -> { result[0] = LAUNCHER_CANCEL; dialog.dispose(); });
+
+        javax.swing.JPanel cancelPanel = new javax.swing.JPanel();
+        cancelPanel.setOpaque(false);
+        cancelPanel.add(cancelBtn);
+
+        panel.add(buttonPanel, java.awt.BorderLayout.CENTER);
+        panel.add(cancelPanel, java.awt.BorderLayout.SOUTH);
+
+        dialog.setContentPane(panel);
+        dialog.pack();
+        dialog.setLocationRelativeTo(null);
+        dialog.setVisible(true);
+
+        return result[0];
+    }
+
+    private static InstallResult installForModrinth(File stableJarForLauncher) {
+        String appDataDir = System.getenv("APPDATA");
+        if (appDataDir == null || appDataDir.isEmpty()) {
+            return new InstallResult(false, "Could not find APPDATA directory.");
+        }
+
+        File dbFile = new java.io.File(appDataDir, "ModrinthApp" + File.separator + "app.db");
+        if (!dbFile.exists()) {
+            return new InstallResult(false, "Modrinth App database not found at: " + dbFile.getAbsolutePath());
+        }
+
+        File profilesDir = new java.io.File(appDataDir, "ModrinthApp" + File.separator + "profiles");
+        String targetPath = null;
+
+        // Auto-detect: the JAR sits inside the profile folder (or its minecraft/ subfolder)
+        File jarDir = stableJarForLauncher.getParentFile();
+        if (jarDir != null) {
+            File candidate = jarDir;
+            String dirName = candidate.getName().toLowerCase();
+            if (dirName.equals("minecraft") || dirName.equals(".minecraft")) {
+                candidate = candidate.getParentFile();
+            }
+            if (candidate != null && candidate.getParentFile() != null &&
+                candidate.getParentFile().getAbsolutePath().equals(profilesDir.getAbsolutePath())) {
+                targetPath = candidate.getName();
+            }
+        }
+
+        if (targetPath == null) {
+            return new InstallResult(false, "Could not detect Modrinth instance from JAR location.\nExpected JAR inside: " + profilesDir.getAbsolutePath() + File.separator + "<instance>");
+        }
+
+        String wrapperCommand = "\"" + System.getProperty("java.home") + File.separator + "bin" + File.separator + "java\" -jar \"" + stableJarForLauncher.getAbsolutePath() + "\" --prelaunch";
+
+        try {
+            java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath());
+            try {
+                java.sql.PreparedStatement ps = conn.prepareStatement(
+                        "UPDATE profiles SET override_hook_pre_launch = ? WHERE path = ?");
+                ps.setString(1, wrapperCommand);
+                ps.setString(2, targetPath);
+                int updated = ps.executeUpdate();
+                ps.close();
+                conn.close();
+
+                if (updated == 0) {
+                    return new InstallResult(false, "Modrinth instance '" + targetPath + "' not found in database.");
+                }
+
+                return new InstallResult(true, "Installed for Modrinth instance: " + targetPath);
+            } catch (Exception e) {
+                conn.close();
+                return new InstallResult(false, "Database error: " + e.getMessage());
+            }
+        } catch (Exception e) {
+            return new InstallResult(false, "Failed to open Modrinth database: " + e.getMessage());
         }
     }
 
