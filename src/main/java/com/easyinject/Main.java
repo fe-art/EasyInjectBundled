@@ -56,8 +56,8 @@ import java.nio.file.StandardOpenOption;
 public class Main {
 
     // Branding - loaded from branding.properties
-    private static String PROJECT_NAME = "EasyInjectBundled";
-    private static String VERSION = "1.0";
+    public static String PROJECT_NAME = "EasyInjectBundled";
+    public static String VERSION = "1.0";
     
     private static final String WATCHER_ARG = "--watcher";
     private static final String INFO_ARG = "--info";
@@ -165,106 +165,16 @@ public class Main {
      * and install PreLaunchCommand.
      */
     private static void showDoubleClickWarning() {
-        // If the user double-clicks the JAR, start with a clean log for easier troubleshooting.
         resetLogFilesForStartup();
-
-        // Get the actual JAR file and its directory. We must be able to create a stable jar copy.
-        String jarFilename = getStableSelfJarFileName();
-        File jarDir = null;
-        File stableJarForLauncher = null;
-        try {
-            String jarPath = getJarPath();
-            File jarFile = new File(jarPath);
-            if (jarFile.isFile()) {
-                jarDir = jarFile.getParentFile();
-
-                // For launcher integration, always install/run via a stable filename:
-                // <brand>.jar in the same folder as the current jar.
-                // This keeps the MultiMC/Prism PreLaunchCommand stable across updates.
-                File stableJar = new File(jarDir, getStableSelfJarFileName());
-                if (!stableJar.getAbsolutePath().equalsIgnoreCase(jarFile.getAbsolutePath())) {
-                    try {
-                        Files.copy(jarFile.toPath(), stableJar.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                        jarFilename = stableJar.getName();
-                        stableJarForLauncher = stableJar;
-                    } catch (Throwable copyErr) {
-                        // If we can't create the stable jar, don't install a broken prelaunch command.
-                        showErrorDialog(
-                            "Failed to create/replace " + stableJar.getName() + " next to the current JAR.\n\n" +
-                            "This usually means the file is currently in use (busy/locked) or blocked by antivirus.\n\n" +
-                            "Close MultiMC/Prism/any process using it and try again.\n\n" +
-                            "Reason: " + (copyErr.getMessage() != null ? copyErr.getMessage() : copyErr.toString())
-                        );
-                        return;
-                    }
-                } else {
-                    jarFilename = jarFile.getName();
-                    stableJarForLauncher = jarFile;
-                }
+        javax.swing.SwingUtilities.invokeLater(new Runnable() {
+            @Override
+            public void run() {
+                com.easyinject.ui.Theme.applyDarkTheme();
+                com.easyinject.ui.InstallerWindow window =
+                    new com.easyinject.ui.InstallerWindow(PROJECT_NAME, VERSION);
+                window.setVisible(true);
             }
-        } catch (Exception e) {
-            // Use default name if we can't get the path
-        }
-
-        if (jarDir == null || stableJarForLauncher == null) {
-            showErrorDialog("Could not resolve the current JAR path to create " + getStableSelfJarFileName() + ".\n\n" +
-                "Please run this from a JAR file (not from an IDE/classpath) and try again.");
-            return;
-        }
-
-        // Check for Smart App Control FIRST - it blocks unsigned DLLs and cannot be bypassed with exclusions.
-        // This must be checked before Defender exclusions since SAC takes precedence over Defender.
-        checkAndWarnAboutSmartAppControl();
-
-        // Prepare persistent DLL directory + Defender exclusion (may trigger UAC)
-        // This must be based on the stable launcher jar (e.g. Toolscreen.jar).
-        prepareDllFolderAndDefenderExclusionForInstall(stableJarForLauncher);
-        
-        // Determine if JAR is in a minecraft/.minecraft subfolder
-        String subfolderPrefix = "";
-        File instanceDir = jarDir;
-        
-        if (jarDir != null) {
-            String dirName = jarDir.getName().toLowerCase();
-            if (dirName.equals("minecraft") || dirName.equals(".minecraft")) {
-                // JAR is in minecraft subfolder, look one level up for instance config
-                instanceDir = jarDir.getParentFile();
-                // Include the subfolder in the command path
-                subfolderPrefix = jarDir.getName() + "/";
-            }
-        }
-        
-        // Build the prelaunch command with appropriate path
-        String jarRelativePath = subfolderPrefix + jarFilename;
-        String prelaunchCommand = "\\\"$INST_JAVA\\\" -jar \\\"$INST_DIR/" + jarRelativePath + "\\\"";
-        String prelaunchCommandAtLauncher = "\"$INST_JAVA\" -jar \"$INST_DIR/" + jarRelativePath + "\"";
-        
-        // Look for instance.cfg (MultiMC/Prism) or instance.json (ATLauncher)
-        File instanceCfg = (instanceDir != null) ? new File(instanceDir, "instance.cfg") : null;
-        File instanceJson = (instanceDir != null) ? new File(instanceDir, "instance.json") : null;
-        
-        if (instanceCfg != null && instanceCfg.exists() && instanceCfg.isFile()) {
-            // MultiMC / Prism Launcher - install via instance.cfg
-            InstallResult result = installPreLaunchCommand(instanceCfg, prelaunchCommand);
-            if (result.success) {
-                ensurePrelaunchTxtExists(instanceDir);
-                showSuccessDialog(jarRelativePath, instanceCfg, instanceDir);
-            } else {
-                showErrorDialog(result.error);
-            }
-        } else if (instanceJson != null && instanceJson.exists() && instanceJson.isFile()) {
-            // ATLauncher - install via instance.json
-            InstallResult result = installPreLaunchCommandJson(instanceJson, prelaunchCommandAtLauncher + " " + PRELAUNCH_ARG);
-            if (result.success) {
-                ensurePrelaunchTxtExists(instanceDir);
-                showSuccessDialog(jarRelativePath, instanceJson, instanceDir);
-            } else {
-                showErrorDialog(result.error);
-            }
-        } else {
-            // No instance config found - show the setup warning
-            showNoInstanceCfgWarning(prelaunchCommand);
-        }
+        });
     }
 
     /**
@@ -273,7 +183,7 @@ public class Main {
      * This is used as a user-editable prelaunch chain file. If the file already exists,
      * it is left untouched.
      */
-    private static void ensurePrelaunchTxtExists(File instanceDir) {
+    public static void ensurePrelaunchTxtExists(File instanceDir) {
         if (instanceDir == null || !instanceDir.isDirectory()) {
             return;
         }
@@ -302,7 +212,7 @@ public class Main {
      * Stable JAR filename used for launcher integration and self-updates.
      * Example: Toolscreen.jar
      */
-    private static String getStableSelfJarFileName() {
+    public static String getStableSelfJarFileName() {
         String base = PROJECT_NAME;
         if (base == null) {
             base = "Toolscreen";
@@ -317,7 +227,7 @@ public class Main {
         return base + ".jar";
     }
 
-    private static class PrepareDllFolderResult {
+    public static class PrepareDllFolderResult {
         final boolean folderReady;
         final boolean defenderExcluded;
         final boolean defenderExclusionSkipped;
@@ -731,7 +641,7 @@ public class Main {
         }
     }
 
-    private static void openWindowsSecurityExclusionsUi() {
+    public static void openWindowsSecurityExclusionsUi() {
         // Best effort. Some Windows builds support windowsdefender: URI, others prefer ms-settings.
         try {
             new ProcessBuilder("cmd", "/C", "start", "", "windowsdefender:").start();
@@ -807,7 +717,7 @@ public class Main {
      * SAC is a Windows 11 feature that blocks unsigned/unsigned apps and DLLs.
      * Unlike Windows Defender, SAC does NOT support exclusions - it must be disabled entirely.
      */
-    private enum SmartAppControlState {
+    public enum SmartAppControlState {
         /** SAC is enabled and actively blocking unsigned apps */
         ENABLED,
         /** SAC is in evaluation mode (still learning, may or may not block) */
@@ -828,7 +738,7 @@ public class Main {
      * 
      * SAC is only available on Windows 11 22H2+. On older Windows, this returns UNKNOWN.
      */
-    private static SmartAppControlState getSmartAppControlState() {
+    public static SmartAppControlState getSmartAppControlState() {
         if (!isWindows()) {
             return SmartAppControlState.UNKNOWN;
         }
@@ -1052,7 +962,7 @@ public class Main {
     /**
      * Open Windows Security to the App & browser control page where Smart App Control settings are located.
      */
-    private static void openWindowsSecuritySmartAppControlUi() {
+    public static void openWindowsSecuritySmartAppControlUi() {
         // Best effort - try multiple approaches
         try {
             // Try the windowsdefender URI scheme
@@ -1220,7 +1130,7 @@ public class Main {
      * Ensure the Defender exclusion using exactly one UAC prompt by spawning an elevated helper
      * instance of this JAR. The helper runs Get-MpPreference (admin) and adds the exclusion if needed.
      */
-    private static DefenderExclusionResult ensureDefenderExclusionWithSingleUac(File dir, File jarToExclude) {
+    public static DefenderExclusionResult ensureDefenderExclusionWithSingleUac(File dir, File jarToExclude) {
         if (dir == null) {
             return new DefenderExclusionResult(false, "No directory provided");
         }
@@ -1679,7 +1589,7 @@ public class Main {
         }
     }
 
-    private static boolean isWindows() {
+    public static boolean isWindows() {
         try {
             String os = System.getProperty("os.name");
             return os != null && os.toLowerCase().contains("windows");
@@ -1733,7 +1643,7 @@ public class Main {
         return out;
     }
 
-    private static File getPreferredPersistentDllDir() {
+    public static File getPreferredPersistentDllDir() {
         String userHome = null;
         try {
             userHome = System.getProperty("user.home");
@@ -1754,9 +1664,9 @@ public class Main {
         return new File(new File(new File(userHome, ".config"), getBrandedConfigFolderName()), "dlls");
     }
 
-    private static class DefenderExclusionResult {
-        final boolean success;
-        final String details;
+    public static class DefenderExclusionResult {
+        public final boolean success;
+        public final String details;
 
         DefenderExclusionResult(boolean success, String details) {
             this.success = success;
@@ -2004,7 +1914,7 @@ public class Main {
         return false;
     }
 
-    private static boolean isDefenderExclusionPresent(String exclusionsKey, String path) {
+    public static boolean isDefenderExclusionPresent(String exclusionsKey, String path) {
         // Check both:
         // 1) Registry (fast, no dependencies)
         // 2) Defender API (Get-MpPreference) because Windows Security can show exclusions that are not
@@ -2081,7 +1991,7 @@ public class Main {
         return q32.exitCode == 0;
     }
 
-    private static String normalizePathForDefenderExclusionCheck(String path) {
+    public static String normalizePathForDefenderExclusionCheck(String path) {
         if (path == null) {
             return "";
         }
@@ -2421,9 +2331,9 @@ public class Main {
     /**
      * Result of attempting to install the PreLaunchCommand.
      */
-    private static class InstallResult {
-        boolean success;
-        String error;
+    public static class InstallResult {
+        public boolean success;
+        public String error;
         
         InstallResult(boolean success, String error) {
             this.success = success;
@@ -2434,9 +2344,9 @@ public class Main {
     /**
      * Result of merging an existing PreLaunchCommand with the new command.
      */
-    private static class MergeResult {
-        boolean proceed;
-        String mergedCommand;
+    public static class MergeResult {
+        public boolean proceed;
+        public String mergedCommand;
 
         MergeResult(boolean proceed, String mergedCommand) {
             this.proceed = proceed;
@@ -2447,7 +2357,7 @@ public class Main {
     /**
      * Install the PreLaunchCommand into instance.cfg (MultiMC/Prism).
      */
-    private static InstallResult installPreLaunchCommand(File instanceCfg, String command) {
+    public static InstallResult installPreLaunchCommand(File instanceCfg, String command) {
         try {
             // Read entire file
             java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(instanceCfg));
@@ -2534,7 +2444,7 @@ public class Main {
      * Resolve Prism/MultiMC pre-launch command. Since Prism supports only one
      * pre-launch command, non-EasyInject commands are forwarded as arguments to our JAR.
      */
-    private static MergeResult resolvePrismPreLaunchCommand(String existingCommand, String newCommand) {
+    public static MergeResult resolvePrismPreLaunchCommand(String existingCommand, String newCommand) {
         if (newCommand == null) {
             return new MergeResult(true, "");
         }
@@ -2601,7 +2511,7 @@ public class Main {
      * Install the PreLaunchCommand into instance.json (ATLauncher).
      * Sets "enableCommands": true and "preLaunchCommand": "<command>" inside the "launcher" object.
      */
-    private static InstallResult installPreLaunchCommandJson(File instanceJson, String command) {
+    public static InstallResult installPreLaunchCommandJson(File instanceJson, String command) {
         try {
             // Read entire file
             java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(instanceJson));
@@ -2719,7 +2629,7 @@ public class Main {
      * Split a pre-launch command string into individual commands.
      * Supports command chains joined by "&&" and ";".
      */
-    private static List<String> splitPreLaunchCommands(String value) {
+    public static List<String> splitPreLaunchCommands(String value) {
         List<String> parts = new ArrayList<String>();
         if (value == null) {
             return parts;
@@ -2785,7 +2695,7 @@ public class Main {
     /**
      * Join multiple pre-launch commands into a single command chain.
      */
-    private static String joinPreLaunchCommands(List<String> parts) {
+    public static String joinPreLaunchCommands(List<String> parts) {
         if (parts == null || parts.isEmpty()) {
             return "";
         }
@@ -2803,7 +2713,7 @@ public class Main {
     /**
      * Determine whether a command segment belongs to this project using branding name.
      */
-    private static boolean isOurPreLaunchSegment(String segment) {
+    public static boolean isOurPreLaunchSegment(String segment) {
         if (segment == null || segment.trim().isEmpty()) {
             return false;
         }
@@ -2838,7 +2748,7 @@ public class Main {
     /**
      * Ensure launcher processes are fully closed before updating pre-launch command config.
      */
-    private static InstallResult closeLaunchersBeforePreLaunchUpdate() {
+    public static InstallResult closeLaunchersBeforePreLaunchUpdate() {
         String[] imageNames = new String[] {"prismlauncher.exe", "multimc.exe"};
         final long timeoutMs = 10000L;
 
@@ -2933,7 +2843,7 @@ public class Main {
     /**
      * Relaunch previously closed launcher executables and clear the saved list.
      */
-    private static void restartSavedLaunchersAfterConfirmation() {
+    public static void restartSavedLaunchersAfterConfirmation() {
         List<String> toRestart = new ArrayList<String>();
         synchronized (savedLauncherPathsForRestart) {
             if (savedLauncherPathsForRestart.isEmpty()) {
@@ -3264,7 +3174,7 @@ public class Main {
     /**
      * Escape forwarded pre-launch command chain for quoted argument-safe transport.
      */
-    private static String escapeForwardedPreLaunchChain(String chain) {
+    public static String escapeForwardedPreLaunchChain(String chain) {
         if (chain == null || chain.trim().isEmpty()) {
             return "";
         }
@@ -3305,7 +3215,7 @@ public class Main {
     /**
      * Extract forwarded pre-launch chain (if any) from an existing EasyInject command segment.
      */
-    private static String extractForwardedPreLaunchChainFromSegment(String segment) {
+    public static String extractForwardedPreLaunchChainFromSegment(String segment) {
         if (segment == null || segment.trim().isEmpty()) {
             return "";
         }
@@ -3365,7 +3275,7 @@ public class Main {
     /**
      * Remove cmd /C wrapper if present and return inner command chain.
      */
-    private static String unwrapCmdWrapper(String command) {
+    public static String unwrapCmdWrapper(String command) {
         if (command == null) {
             return "";
         }
@@ -3395,7 +3305,7 @@ public class Main {
     /**
      * Extract and unescape JSON string value from a single-line key/value entry.
      */
-    private static String extractJsonStringValue(String line) {
+    public static String extractJsonStringValue(String line) {
         if (line == null) {
             return "";
         }
@@ -3440,6 +3350,224 @@ public class Main {
         }
 
         return value.toString();
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    //  New UI adapter methods (called by InstallerWindow screens)
+    // ═════════════════════════════════════════════════════════════════════
+
+    /**
+     * Resolve a prelaunch command merge without showing a dialog.
+     * @param choice 0 = keep/include existing, 1 = replace existing
+     */
+    public static MergeResult resolvePrismPreLaunchCommandNoUi(String existingCommand, String newCommand, int choice) {
+        if (newCommand == null) {
+            return new MergeResult(true, "");
+        }
+        String baseCommand = unwrapCmdWrapper(newCommand).trim();
+        if (baseCommand.isEmpty()) {
+            return new MergeResult(true, "");
+        }
+        String existing = existingCommand != null ? existingCommand.trim() : "";
+        if (existing.isEmpty()) {
+            return new MergeResult(true, baseCommand);
+        }
+
+        List<String> parts = splitPreLaunchCommands(existing);
+        if (parts.isEmpty()) {
+            return new MergeResult(true, baseCommand);
+        }
+
+        List<String> directNonOurs = new ArrayList<String>();
+        List<String> forwardedFromOurOld = new ArrayList<String>();
+
+        for (String part : parts) {
+            if (isOurPreLaunchSegment(part)) {
+                String forwarded = extractForwardedPreLaunchChainFromSegment(part);
+                if (!forwarded.isEmpty()) {
+                    forwardedFromOurOld.add(forwarded);
+                }
+            } else {
+                directNonOurs.add(part);
+            }
+        }
+
+        List<String> allForwarded = new ArrayList<String>();
+        allForwarded.addAll(directNonOurs);
+        allForwarded.addAll(forwardedFromOurOld);
+
+        if (allForwarded.isEmpty()) {
+            return new MergeResult(true, baseCommand);
+        }
+
+        String forwardedChain = joinPreLaunchCommands(allForwarded);
+        String escapedForwarded = escapeForwardedPreLaunchChain(forwardedChain);
+        String keepCommand = baseCommand + " " + FORWARDED_PRELAUNCH_CHAIN_ARG + " \\\"" + escapedForwarded + "\\\"";
+        String replaceCommand = baseCommand;
+
+        if (directNonOurs.isEmpty()) {
+            return new MergeResult(true, keepCommand);
+        }
+
+        if (choice == 0) {
+            return new MergeResult(true, keepCommand);
+        }
+        if (choice == 1) {
+            return new MergeResult(true, replaceCommand);
+        }
+
+        return new MergeResult(false, existing);
+    }
+
+    /**
+     * Install a pre-resolved prelaunch command into instance.cfg without merge dialog.
+     * Directly writes the resolved command and closes launchers.
+     */
+    public static InstallResult installPreLaunchCommandResolved(File instanceCfg, String resolvedCommand) {
+        try {
+            java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(instanceCfg));
+            List<String> lines = new ArrayList<String>();
+            String line;
+            boolean foundPreLaunch = false;
+            boolean foundOverrideCommands = false;
+
+            while ((line = reader.readLine()) != null) {
+                lines.add(line);
+                if (line.startsWith("PreLaunchCommand=")) foundPreLaunch = true;
+                if (line.startsWith("OverrideCommands=")) foundOverrideCommands = true;
+            }
+            reader.close();
+
+            List<String> updated = new ArrayList<String>();
+            boolean wrotePreLaunch = false;
+            boolean wroteOverrideCommands = false;
+
+            for (String original : lines) {
+                if (original.startsWith("PreLaunchCommand=")) {
+                    if (!wrotePreLaunch) {
+                        updated.add("PreLaunchCommand=" + (resolvedCommand != null ? resolvedCommand : ""));
+                        wrotePreLaunch = true;
+                    }
+                } else if (original.startsWith("OverrideCommands=")) {
+                    updated.add("OverrideCommands=true");
+                    wroteOverrideCommands = true;
+                } else {
+                    updated.add(original);
+                }
+            }
+
+            if (!wrotePreLaunch && resolvedCommand != null) {
+                updated.add("PreLaunchCommand=" + resolvedCommand);
+            }
+            if (!wroteOverrideCommands && resolvedCommand != null && !resolvedCommand.trim().isEmpty()) {
+                updated.add("OverrideCommands=true");
+            }
+
+            PrintWriter writer = new PrintWriter(new FileWriter(instanceCfg));
+            for (String l : updated) {
+                writer.println(l);
+            }
+            writer.close();
+
+            return new InstallResult(true, null);
+        } catch (Exception e) {
+            return new InstallResult(false, e.getMessage());
+        }
+    }
+
+    /**
+     * Install a pre-resolved prelaunch command into instance.json without merge dialog.
+     */
+    public static InstallResult installPreLaunchCommandJsonResolved(File instanceJson, String resolvedCommand) {
+        try {
+            java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(instanceJson));
+            List<String> lines = new ArrayList<String>();
+            String line;
+            boolean foundEnableCommands = false;
+            boolean foundPreLaunchCommand = false;
+            int launcherBraceLine = -1;
+            int preLaunchLineIndex = -1;
+
+            while ((line = reader.readLine()) != null) {
+                lines.add(line);
+            }
+            reader.close();
+
+            for (int i = 0; i < lines.size(); i++) {
+                String trimmed = lines.get(i).trim();
+                if (trimmed.startsWith("\"launcher\"") && trimmed.contains("{")) {
+                    launcherBraceLine = i;
+                } else if (launcherBraceLine >= 0 && !foundEnableCommands && trimmed.equals("\"launcher\": {")) {
+                    launcherBraceLine = i;
+                }
+                if (trimmed.startsWith("\"enableCommands\"")) {
+                    String indent = lines.get(i).substring(0, lines.get(i).indexOf('"'));
+                    boolean needsComma = trimmed.endsWith(",");
+                    boolean enable = resolvedCommand != null && !resolvedCommand.trim().isEmpty();
+                    lines.set(i, indent + "\"enableCommands\": " + enable + (needsComma ? "," : ""));
+                    foundEnableCommands = true;
+                }
+                if (trimmed.startsWith("\"preLaunchCommand\"")) {
+                    preLaunchLineIndex = i;
+                    foundPreLaunchCommand = true;
+                }
+            }
+
+            if (foundPreLaunchCommand && preLaunchLineIndex >= 0) {
+                String trimmed = lines.get(preLaunchLineIndex).trim();
+                String indent = lines.get(preLaunchLineIndex).substring(0, lines.get(preLaunchLineIndex).indexOf('"'));
+                boolean needsComma = trimmed.endsWith(",");
+                String escapedCommand = (resolvedCommand != null ? resolvedCommand : "").replace("\\", "\\\\").replace("\"", "\\\"");
+                lines.set(preLaunchLineIndex, indent + "\"preLaunchCommand\": \"" + escapedCommand + "\"" + (needsComma ? "," : ""));
+            }
+
+            if ((!foundEnableCommands || !foundPreLaunchCommand) && launcherBraceLine >= 0) {
+                String indent = "        ";
+                if (launcherBraceLine + 1 < lines.size()) {
+                    String nextLine = lines.get(launcherBraceLine + 1);
+                    int spaces = 0;
+                    while (spaces < nextLine.length() && nextLine.charAt(spaces) == ' ') spaces++;
+                    if (spaces > 0) indent = nextLine.substring(0, spaces);
+                }
+                int insertAt = launcherBraceLine + 1;
+                if (!foundPreLaunchCommand && resolvedCommand != null && !resolvedCommand.isEmpty()) {
+                    String escapedMerged = resolvedCommand.replace("\\", "\\\\").replace("\"", "\\\"");
+                    lines.add(insertAt, indent + "\"preLaunchCommand\": \"" + escapedMerged + "\",");
+                }
+                if (!foundEnableCommands && resolvedCommand != null && !resolvedCommand.trim().isEmpty()) {
+                    lines.add(insertAt, indent + "\"enableCommands\": true,");
+                }
+            }
+
+            PrintWriter writer = new PrintWriter(new FileWriter(instanceJson));
+            for (int i = 0; i < lines.size(); i++) {
+                writer.println(lines.get(i));
+            }
+            writer.close();
+
+            return new InstallResult(true, null);
+        } catch (Exception e) {
+            return new InstallResult(false, e.getMessage());
+        }
+    }
+
+    /**
+     * Get the Discord URL from branding.properties. Returns null if not set.
+     */
+    public static String getDiscordUrl() {
+        try {
+            java.io.InputStream is = Main.class.getResourceAsStream("/branding.properties");
+            if (is != null) {
+                java.util.Properties props = new java.util.Properties();
+                props.load(is);
+                is.close();
+                String url = props.getProperty("brand.discordUrl");
+                if (url != null && !url.trim().isEmpty()) {
+                    return url.trim();
+                }
+            }
+        } catch (Exception ignored) {}
+        return null;
     }
 
     /**
@@ -4536,7 +4664,7 @@ public class Main {
     /**
      * Extract all embedded DLLs from the JAR's dlls/ resource folder.
      */
-    private static List<Path> extractEmbeddedDlls() {
+    public static List<Path> extractEmbeddedDlls() {
         List<Path> extractedDlls = new ArrayList<Path>();
         File dllDir = getEmbeddedDllExtractDir();
 
@@ -4663,7 +4791,7 @@ public class Main {
         return extractedDlls;
     }
 
-    private static String getJarPath() throws URISyntaxException {
+    public static String getJarPath() throws URISyntaxException {
         return new File(Main.class.getProtectionDomain()
             .getCodeSource()
             .getLocation()
