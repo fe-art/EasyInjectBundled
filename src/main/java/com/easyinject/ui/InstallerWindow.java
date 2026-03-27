@@ -17,6 +17,7 @@ public class InstallerWindow extends JFrame {
     private final CardLayout cardLayout;
     private final JPanel contentPanel;
     private final JLabel subtitleLabel;
+    private final JPanel header;
 
     // Shared state set by HomeScreen after detection
     private java.io.File instanceDir;
@@ -42,8 +43,8 @@ public class InstallerWindow extends JFrame {
             }
         });
 
-        setMinimumSize(new Dimension(580, 420));
-        setPreferredSize(new Dimension(580, 420));
+        setMinimumSize(new Dimension(580, 470));
+        setPreferredSize(new Dimension(580, 470));
         setResizable(false);
 
         // Root panel with full-bg paint to avoid ghosting
@@ -60,7 +61,7 @@ public class InstallerWindow extends JFrame {
         root.setDoubleBuffered(true);
 
         // ── Header ──────────────────────────────────────────────────────
-        JPanel header = new JPanel(new BorderLayout());
+        header = new JPanel(new BorderLayout());
         header.setBackground(Theme.BG_DARKER);
         header.setBorder(BorderFactory.createCompoundBorder(
             BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.DIVIDER),
@@ -149,6 +150,7 @@ public class InstallerWindow extends JFrame {
 
     public String getProjectName()      { return projectName; }
     public String getVersion()          { return version; }
+    public void setHeaderVisible(boolean visible) { header.setVisible(visible); }
 
     public java.io.File getInstanceDir()    { return instanceDir; }
     public java.io.File getInstanceConfig() { return instanceConfig; }

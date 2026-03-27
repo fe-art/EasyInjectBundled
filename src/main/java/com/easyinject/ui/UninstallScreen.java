@@ -57,7 +57,7 @@ public class UninstallScreen extends InstallerWindow.ScreenPanel {
         confirmButtons.setBackground(Theme.BG);
 
         JButton cancelBtn = Theme.createButton("Cancel");
-        cancelBtn.addActionListener(e -> window.showScreen(InstallerWindow.SCREEN_HOME));
+        cancelBtn.addActionListener(e -> { window.setHeaderVisible(false); window.showScreen(InstallerWindow.SCREEN_HOME); });
 
         JButton uninstallBtn = Theme.createAccentButton("Uninstall", Theme.ERROR);
         uninstallBtn.addActionListener(e -> runUninstall());

@@ -24,9 +24,19 @@ public class HomeScreen extends InstallerWindow.ScreenPanel {
     public HomeScreen(InstallerWindow window) {
         super(window);
         setLayout(new BorderLayout());
-        setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
+        setBorder(BorderFactory.createEmptyBorder(0, 0, 20, 0));
+
+        // ── Banner ──────────────────────────────────────────────────────
+        try {
+            ImageIcon bannerIcon = new ImageIcon(getClass().getResource("/icons/banner.png"));
+            JLabel bannerLabel = new JLabel(bannerIcon);
+            bannerLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            bannerLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 8, 0));
+            add(bannerLabel, BorderLayout.NORTH);
+        } catch (Exception ignored) {}
 
         JPanel center = Theme.createVBox();
+        center.setBorder(BorderFactory.createEmptyBorder(0, 24, 0, 24));
         center.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         // ── Instance info card ──────────────────────────────────────────
@@ -89,18 +99,21 @@ public class HomeScreen extends InstallerWindow.ScreenPanel {
         uninstallBtn.setPreferredSize(new Dimension(120, 36));
 
         installBtn.addActionListener(e -> {
+            window.setHeaderVisible(true);
             window.showScreen(InstallerWindow.SCREEN_INSTALL);
             InstallFlow flow = window.getScreen(InstallFlow.class);
             if (flow != null) flow.onShow();
         });
 
         repairBtn.addActionListener(e -> {
+            window.setHeaderVisible(true);
             window.showScreen(InstallerWindow.SCREEN_REPAIR);
             RepairScreen repair = window.getScreen(RepairScreen.class);
             if (repair != null) repair.onShow();
         });
 
         uninstallBtn.addActionListener(e -> {
+            window.setHeaderVisible(true);
             window.showScreen(InstallerWindow.SCREEN_UNINSTALL);
             UninstallScreen uninstall = window.getScreen(UninstallScreen.class);
             if (uninstall != null) uninstall.onShow();
@@ -114,6 +127,12 @@ public class HomeScreen extends InstallerWindow.ScreenPanel {
 
         // ── Detect instance ─────────────────────────────────────────────
         detectInstance();
+        window.setHeaderVisible(false);
+    }
+
+    @Override
+    public void onShow() {
+        window.setHeaderVisible(false);
     }
 
     /**

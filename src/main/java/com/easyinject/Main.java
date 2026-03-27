@@ -155,7 +155,7 @@ public class Main {
                 System.exit(runLauncherMode(args));
             } else {
                 showDoubleClickWarning();
-                System.exit(0);
+                return;
             }
         }
     }
@@ -2335,7 +2335,7 @@ public class Main {
         public boolean success;
         public String error;
         
-        InstallResult(boolean success, String error) {
+        public InstallResult(boolean success, String error) {
             this.success = success;
             this.error = error;
         }
@@ -4123,12 +4123,35 @@ public class Main {
                     }
                 );
                 if (updateScheduled) {
-                    // Make it extremely obvious to the user that they must start the instance again.
-                    // This runs in pre-launch context, so a modal dialog is the most reliable.
-                    showUpdateRestartRequiredDialogBlocking();
-                    System.out.println("[" + PROJECT_NAME + "] Update scheduled; launcher exiting with code 1 to prevent game launch.");
-                    launcherLog("[Updater] Update scheduled; exiting launcher with code 1.");
-                    return 1;
+                    launcherLog("[Updater] Update complete; waiting for JAR replacement...");
+
+                    // Wait for the file replace to complete (size or timestamp change)
+                    File jarFile = new File(jarPath);
+                    long origSize = jarFile.length();
+                    long origMod = jarFile.lastModified();
+                    for (int i = 0; i < 60; i++) {
+                        try { Thread.sleep(500); } catch (InterruptedException ignored) {}
+                        if (jarFile.length() != origSize || jarFile.lastModified() != origMod) {
+                            launcherLog("[Updater] JAR replaced (size: " + origSize + " -> " + jarFile.length() + ")");
+                            break;
+                        }
+                    }
+
+                    launcherLog("[Updater] Re-executing updated JAR.");
+                    System.out.println("[" + PROJECT_NAME + "] Update complete; re-launching with updated JAR.");
+
+                    // Re-exec ourselves — the updated JAR is now in place
+                    List<String> relaunchCmd = new ArrayList<String>();
+                    relaunchCmd.add(getCurrentJavaExecutablePath());
+                    relaunchCmd.add("-jar");
+                    relaunchCmd.add(jarPath);
+                    for (String arg : args) relaunchCmd.add(arg);
+
+                    ProcessBuilder relaunch = new ProcessBuilder(relaunchCmd);
+                    relaunch.directory(new File(System.getProperty("user.dir")));
+                    relaunch.inheritIO();
+                    Process p = relaunch.start();
+                    return p.waitFor();
                 }
 
                 launcherLog("[Updater] No update scheduled; continuing normal launch.");

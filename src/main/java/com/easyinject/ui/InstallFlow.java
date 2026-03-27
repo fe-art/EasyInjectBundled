@@ -326,7 +326,7 @@ public class InstallFlow extends InstallerWindow.ScreenPanel {
             buttons.setBackground(Theme.BG);
 
             JButton backBtn = Theme.createButton("Back");
-            backBtn.addActionListener(e -> window.showScreen(InstallerWindow.SCREEN_HOME));
+            backBtn.addActionListener(e -> { window.setHeaderVisible(false); window.showScreen(InstallerWindow.SCREEN_HOME); });
 
             skipBtn = Theme.createButton("Skip");
             skipBtn.addActionListener(e -> {
@@ -535,8 +535,11 @@ public class InstallFlow extends InstallerWindow.ScreenPanel {
     // ═════════════════════════════════════════════════════════════════════
 
     private class InstallStepPanel extends JPanel {
-        private final JLabel launcherInfo;
-        private final JComboBox<String> launcherOverride;
+        private final JPanel launcherTilePanel;
+        private String selectedLauncher = null;
+        private String detectedLauncher = null;
+        private final java.util.Map<String, JPanel> launcherTiles = new java.util.LinkedHashMap<>();
+        private final java.util.Map<String, JLabel> launcherDetectedLabels = new java.util.LinkedHashMap<>();
         private final JPanel mergePanel;
         private final JRadioButton mergeKeep;
         private final JRadioButton mergeReplace;
@@ -560,33 +563,86 @@ public class InstallFlow extends InstallerWindow.ScreenPanel {
 
             JPanel body = Theme.createVBox();
 
-            // ── Launcher info ───────────────────────────────────────────
-            JLabel title = Theme.createLabel("Installation", Theme.HEADING_FONT, Theme.FG);
+            // ── Launcher selection tiles ─────────────────────────────────
+            JLabel title = Theme.createLabel("Select Launcher", Theme.HEADING_FONT, Theme.FG);
             body.add(title);
             body.add(Box.createVerticalStrut(8));
 
-            JPanel launcherRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-            launcherRow.setBackground(Theme.BG);
-            launcherRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+            launcherTilePanel = new JPanel(new GridLayout(1, 4, 8, 0));
+            launcherTilePanel.setBackground(Theme.BG);
+            launcherTilePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            launcherTilePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
 
-            launcherInfo = Theme.createLabel("Detected: —", Theme.BODY_FONT, Theme.FG);
-            launcherRow.add(launcherInfo);
+            String[][] launchers = {
+                {"Prism Launcher", "/icons/prism.png"},
+                {"MultiMC", "/icons/multimc.png"},
+                {"ATLauncher", "/icons/atlauncher.png"},
+                {"Modrinth", "/icons/modrinth.png"},
+            };
 
-            launcherOverride = new JComboBox<>(new String[]{"Prism Launcher", "MultiMC", "ATLauncher"});
-            launcherOverride.setVisible(false);
-            launcherOverride.setFont(Theme.BODY_FONT);
-            launcherRow.add(launcherOverride);
+            for (String[] entry : launchers) {
+                final String name = entry[0];
+                String iconPath = entry[1];
 
-            JButton changeBtn = Theme.createButton("Change");
-            changeBtn.setFont(Theme.SMALL_FONT);
-            changeBtn.setBorder(BorderFactory.createEmptyBorder(4, 10, 4, 10));
-            changeBtn.addActionListener(e -> {
-                launcherOverride.setVisible(!launcherOverride.isVisible());
-                launcherRow.revalidate();
-            });
-            launcherRow.add(changeBtn);
+                JPanel tile = new JPanel(new GridBagLayout());
+                tile.setBackground(Theme.BG_DARKER);
+                tile.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(Theme.BORDER, 1),
+                    BorderFactory.createEmptyBorder(8, 4, 4, 4)
+                ));
+                tile.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
-            body.add(launcherRow);
+                GridBagConstraints gbc = new GridBagConstraints();
+                gbc.gridx = 0;
+                gbc.anchor = GridBagConstraints.CENTER;
+
+                gbc.gridy = 0;
+                gbc.insets = new Insets(0, 0, 4, 0);
+                try {
+                    ImageIcon icon = new ImageIcon(getClass().getResource(iconPath));
+                    Image scaled = icon.getImage().getScaledInstance(36, 36, Image.SCALE_SMOOTH);
+                    tile.add(new JLabel(new ImageIcon(scaled)), gbc);
+                } catch (Exception ignored) {}
+
+                gbc.gridy = 1;
+                gbc.insets = new Insets(0, 0, 2, 0);
+                JLabel nameLabel = Theme.createLabel(name, Theme.SMALL_FONT, Theme.SUBTLE);
+                tile.add(nameLabel, gbc);
+
+                gbc.gridy = 2;
+                gbc.insets = new Insets(0, 0, 0, 0);
+                JLabel detectedLabel = Theme.createLabel("Detected", Theme.SMALL_FONT, Theme.SUCCESS);
+                detectedLabel.setVisible(false);
+                tile.add(detectedLabel, gbc);
+
+                tile.addMouseListener(new java.awt.event.MouseAdapter() {
+                    @Override public void mouseClicked(java.awt.event.MouseEvent e) {
+                        selectLauncherTile(name);
+                    }
+                    @Override public void mouseEntered(java.awt.event.MouseEvent e) {
+                        if (!name.equals(selectedLauncher)) {
+                            tile.setBorder(BorderFactory.createCompoundBorder(
+                                BorderFactory.createLineBorder(Theme.SUBTLE, 1),
+                                BorderFactory.createEmptyBorder(8, 4, 4, 4)
+                            ));
+                        }
+                    }
+                    @Override public void mouseExited(java.awt.event.MouseEvent e) {
+                        if (!name.equals(selectedLauncher)) {
+                            tile.setBorder(BorderFactory.createCompoundBorder(
+                                BorderFactory.createLineBorder(Theme.BORDER, 1),
+                                BorderFactory.createEmptyBorder(8, 4, 4, 4)
+                            ));
+                        }
+                    }
+                });
+
+                launcherTiles.put(name, tile);
+                launcherDetectedLabels.put(name, detectedLabel);
+                launcherTilePanel.add(tile);
+            }
+
+            body.add(launcherTilePanel);
             body.add(Box.createVerticalStrut(12));
 
             // ── Merge conflict panel (hidden by default) ────────────────
@@ -656,27 +712,40 @@ public class InstallFlow extends InstallerWindow.ScreenPanel {
             add(buttons, BorderLayout.SOUTH);
         }
 
+        void selectLauncherTile(String name) {
+            selectedLauncher = name;
+            for (java.util.Map.Entry<String, JPanel> e : launcherTiles.entrySet()) {
+                boolean sel = e.getKey().equals(name);
+                e.getValue().setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(sel ? Theme.SUCCESS : Theme.BORDER, sel ? 2 : 1),
+                    BorderFactory.createEmptyBorder(sel ? 7 : 8, sel ? 3 : 4, sel ? 3 : 4, sel ? 3 : 4)
+                ));
+                e.getValue().setBackground(sel ? new Color(55, 65, 55) : Theme.BG_DARKER);
+            }
+        }
+
         void onShow() {
-            // Reset rows
             copyRow.setState(StatusRow.State.PENDING, "Ready");
             launcherCloseRow.setState(StatusRow.State.PENDING, "Ready");
             writeRow.setState(StatusRow.State.PENDING, "Ready");
             dllRow.setState(StatusRow.State.PENDING, "Ready");
 
-            // Update launcher info
             String launcher = window.getDetectedLauncher();
+            detectedLauncher = null;
+            for (JLabel dl : launcherDetectedLabels.values()) dl.setVisible(false);
             if (launcher != null) {
-                launcherInfo.setText("Detected: " + launcher + "  \u2022  " + window.getInstanceName());
-                // Pre-select in dropdown
-                for (int i = 0; i < launcherOverride.getItemCount(); i++) {
-                    if (launcherOverride.getItemAt(i).toLowerCase().contains(launcher.toLowerCase().split("/")[0].trim())) {
-                        launcherOverride.setSelectedIndex(i);
-                        break;
-                    }
-                }
+                String lower = launcher.toLowerCase();
+                String pick = "Prism Launcher";
+                if (lower.contains("prism")) pick = "Prism Launcher";
+                else if (lower.contains("multimc")) pick = "MultiMC";
+                else if (lower.contains("atlauncher")) pick = "ATLauncher";
+                else if (lower.contains("modrinth")) pick = "Modrinth";
+                detectedLauncher = pick;
+                selectLauncherTile(pick);
+                JLabel dl = launcherDetectedLabels.get(pick);
+                if (dl != null) dl.setVisible(true);
             }
 
-            // Check for existing prelaunch command conflict
             checkForMergeConflict();
         }
 

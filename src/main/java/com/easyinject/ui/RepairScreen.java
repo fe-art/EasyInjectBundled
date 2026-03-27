@@ -61,7 +61,7 @@ public class RepairScreen extends InstallerWindow.ScreenPanel {
         buttons.setBackground(Theme.BG);
 
         backBtn = Theme.createButton("Back");
-        backBtn.addActionListener(e -> window.showScreen(InstallerWindow.SCREEN_HOME));
+        backBtn.addActionListener(e -> { window.setHeaderVisible(false); window.showScreen(InstallerWindow.SCREEN_HOME); });
 
         fixAllBtn = Theme.createAccentButton("Fix All", Theme.WARNING);
         fixAllBtn.setVisible(false);
