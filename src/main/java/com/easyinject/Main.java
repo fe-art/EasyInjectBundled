@@ -13,6 +13,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
@@ -238,9 +239,15 @@ public class Main {
 
         ModrinthInstance modrinth = detectModrinthInstance(stableJarForLauncher.getParentFile());
         if (modrinth != null) {
-            InstallResult result = installForModrinthProfile(stableJarForLauncher, modrinth);
+            File agentDll = extractMainDllForAgentInstall();
+            if (agentDll == null) {
+                showErrorDialog("Could not extract " + (PROJECT_NAME != null ? PROJECT_NAME : "Toolscreen") + ".dll from the installer JAR.");
+                return;
+            }
+            final ModrinthInstance modrinthFinal = modrinth;
+            InstallResult result = installAgentForModrinthProfile(modrinth, agentDll.getAbsolutePath());
             if (result.success) {
-                showSuccessDialog(jarRelativePath, modrinth, instanceDir);
+                showSuccessDialogImpl(jarRelativePath, instanceDir, () -> clearAgentForModrinthProfile(modrinthFinal));
             } else {
                 showErrorDialog(result.error);
             }
@@ -251,10 +258,16 @@ public class Main {
         File instanceJson = (instanceDir != null) ? new File(instanceDir, "instance.json") : null;
 
         if (instanceCfg != null && instanceCfg.exists() && instanceCfg.isFile()) {
-            InstallResult result = installPreLaunchCommand(instanceCfg, prelaunchCommand);
+            File agentDll = extractMainDllForAgentInstall();
+            if (agentDll == null) {
+                showErrorDialog("Could not extract " + (PROJECT_NAME != null ? PROJECT_NAME : "Toolscreen") + ".dll from the installer JAR.");
+                return;
+            }
+            final File instanceCfgFinal = instanceCfg;
+            InstallResult result = installJvmAgentForPrism(instanceCfg, agentDll.getAbsolutePath());
             if (result.success) {
                 ensurePrelaunchTxtExists(instanceDir);
-                showSuccessDialog(jarRelativePath, instanceCfg, instanceDir);
+                showSuccessDialogImpl(jarRelativePath, instanceDir, () -> clearJvmAgentForPrism(instanceCfgFinal));
             } else {
                 showErrorDialog(result.error);
             }
@@ -346,6 +359,36 @@ public class Main {
 
     private static InstallResult clearModrinthPreLaunchHook(ModrinthInstance modrinth) {
         return withModrinthDb(modrinth, conn -> writeModrinthHook(conn, modrinth.profilePath, null));
+    }
+
+    /**
+     * Install via -agentpath JVM arg into Modrinth's override_extra_launch_args column.
+     * Also clears any legacy override_hook_pre_launch from older installs.
+     */
+    private static InstallResult installAgentForModrinthProfile(ModrinthInstance modrinth, String agentDllAbsolutePath) {
+        return withModrinthDb(modrinth, conn -> {
+            String safePath = agentDllAbsolutePath.replace('\\', '/');
+            String json = "[\"-agentpath:" + safePath + "\"]";
+            try (java.sql.PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE profiles SET override_extra_launch_args = ?, override_hook_pre_launch = NULL WHERE path = ?")) {
+                ps.setString(1, json);
+                ps.setString(2, modrinth.profilePath);
+                if (ps.executeUpdate() == 0) return profileNotFound(modrinth.profilePath);
+            }
+            return new InstallResult(true, null);
+        });
+    }
+
+    private static InstallResult clearAgentForModrinthProfile(ModrinthInstance modrinth) {
+        return withModrinthDb(modrinth, conn -> {
+            try (java.sql.PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE profiles SET override_extra_launch_args = ? WHERE path = ?")) {
+                ps.setString(1, "[]");
+                ps.setString(2, modrinth.profilePath);
+                if (ps.executeUpdate() == 0) return profileNotFound(modrinth.profilePath);
+            }
+            return new InstallResult(true, null);
+        });
     }
 
     private static InstallResult withModrinthDb(ModrinthInstance modrinth, ModrinthSqlOp op) {
@@ -2653,6 +2696,95 @@ public class Main {
         } catch (Exception e) {
             return new InstallResult(false, e.getMessage());
         }
+    }
+
+    /**
+     * Install via the JVM's documented JVMTI agent path: write a -agentpath JVM arg
+     * into the instance, clear the legacy PreLaunchCommand. The JVM loads the DLL
+     * itself at startup; no watcher, no cross-process injection.
+     */
+    private static InstallResult installJvmAgentForPrism(File instanceCfg, String agentDllAbsolutePath) {
+        InstallResult closeResult = closeLaunchersBeforePreLaunchUpdate();
+        if (!closeResult.success) return closeResult;
+        // Forward slashes: Qt's INI parser consumes backslash-escape sequences when reading
+        // instance.cfg, mangling Windows paths. The JVM accepts forward slashes in -agentpath.
+        String safePath = agentDllAbsolutePath.replace('\\', '/');
+        return rewriteInstanceCfgForAgent(instanceCfg, "-agentpath:" + safePath, true);
+    }
+
+    private static InstallResult clearJvmAgentForPrism(File instanceCfg) {
+        InstallResult closeResult = closeLaunchersBeforePreLaunchUpdate();
+        if (!closeResult.success) return closeResult;
+        return rewriteInstanceCfgForAgent(instanceCfg, "", false);
+    }
+
+    private static InstallResult rewriteInstanceCfgForAgent(File instanceCfg, String jvmArgsValue, boolean overrideJavaArgs) {
+        try {
+            List<String> lines = readAllLines(instanceCfg);
+            List<String> out = new ArrayList<String>();
+            boolean wroteJvm = false;
+            boolean wroteOverride = false;
+            for (String line : lines) {
+                if (line.startsWith("JvmArgs=")) {
+                    if (!wroteJvm) {
+                        out.add("JvmArgs=" + jvmArgsValue);
+                        wroteJvm = true;
+                    }
+                } else if (line.startsWith("OverrideJavaArgs=")) {
+                    if (!wroteOverride) {
+                        out.add("OverrideJavaArgs=" + overrideJavaArgs);
+                        wroteOverride = true;
+                    }
+                } else if (line.startsWith("PreLaunchCommand=")) {
+                    out.add("PreLaunchCommand=");
+                } else {
+                    out.add(line);
+                }
+            }
+            if (!wroteJvm) out.add("JvmArgs=" + jvmArgsValue);
+            if (!wroteOverride) out.add("OverrideJavaArgs=" + overrideJavaArgs);
+
+            PrintWriter writer = new PrintWriter(new FileWriter(instanceCfg));
+            try {
+                for (String l : out) writer.println(l);
+            } finally {
+                writer.close();
+            }
+            return new InstallResult(true, null);
+        } catch (Exception e) {
+            return new InstallResult(false, e.getMessage());
+        }
+    }
+
+    private static List<String> readAllLines(File f) throws IOException {
+        List<String> result = new ArrayList<String>();
+        BufferedReader r = new BufferedReader(new FileReader(f));
+        try {
+            String line;
+            while ((line = r.readLine()) != null) result.add(line);
+        } finally {
+            r.close();
+        }
+        return result;
+    }
+
+    /**
+     * Extract embedded DLLs and return the absolute path of the main Toolscreen DLL,
+     * or null if not present.
+     */
+    private static File extractMainDllForAgentInstall() {
+        try {
+            List<Path> extracted = extractEmbeddedDlls();
+            String expected = (PROJECT_NAME != null ? PROJECT_NAME : "Toolscreen") + ".dll";
+            for (Path p : extracted) {
+                if (p.getFileName().toString().equalsIgnoreCase(expected)) {
+                    return p.toFile();
+                }
+            }
+        } catch (Throwable ignored) {
+            // fall through
+        }
+        return null;
     }
 
     /**
