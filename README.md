@@ -18,12 +18,18 @@ A variant of EasyInject that bundles DLLs inside the JAR at build time.
 1. **liblogger_x64.dll** is always injected first
 2. Other DLLs are injected after
 
-## MultiMC Setup
+## MultiMC / PrismLauncher Setup
 
 Set **pre-launch command** in Settings → Custom Commands:
 ```
 $INST_JAVA -jar EasyInjectBundled-1.0.jar
 ```
+
+## Modrinth App Setup
+
+Place the JAR in the instance's profile folder and double-click it. The installer writes the pre-launch hook into Modrinth's `app.db` for that profile.
+
+## How It Works
 
 This spawns a background watcher process that waits for Minecraft to start, then injects the bundled DLLs.
 
