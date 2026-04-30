@@ -13,6 +13,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
@@ -223,37 +224,37 @@ public class Main {
         // Determine if JAR is in a minecraft/.minecraft subfolder
         String subfolderPrefix = "";
         File instanceDir = jarDir;
-        
+
         if (jarDir != null) {
             String dirName = jarDir.getName().toLowerCase();
             if (dirName.equals("minecraft") || dirName.equals(".minecraft")) {
-                // JAR is in minecraft subfolder, look one level up for instance config
                 instanceDir = jarDir.getParentFile();
-                // Include the subfolder in the command path
                 subfolderPrefix = jarDir.getName() + "/";
             }
         }
-        
-        // Build the prelaunch command with appropriate path
+
         String jarRelativePath = subfolderPrefix + jarFilename;
         String prelaunchCommand = "\\\"$INST_JAVA\\\" -jar \\\"$INST_DIR/" + jarRelativePath + "\\\"";
         String prelaunchCommandAtLauncher = "\"$INST_JAVA\" -jar \"$INST_DIR/" + jarRelativePath + "\"";
-        
-        // Look for instance.cfg (MultiMC/Prism) or instance.json (ATLauncher)
+
         File instanceCfg = (instanceDir != null) ? new File(instanceDir, "instance.cfg") : null;
         File instanceJson = (instanceDir != null) ? new File(instanceDir, "instance.json") : null;
-        
+
         if (instanceCfg != null && instanceCfg.exists() && instanceCfg.isFile()) {
-            // MultiMC / Prism Launcher - install via instance.cfg
-            InstallResult result = installPreLaunchCommand(instanceCfg, prelaunchCommand);
+            File agentDll = extractMainDllForAgentInstall();
+            if (agentDll == null) {
+                showErrorDialog("Could not extract " + PROJECT_NAME + ".dll from the installer JAR.");
+                return;
+            }
+            final File instanceCfgFinal = instanceCfg;
+            InstallResult result = installJvmAgentForPrism(instanceCfg, agentDll.getAbsolutePath());
             if (result.success) {
                 ensurePrelaunchTxtExists(instanceDir);
-                showSuccessDialog(jarRelativePath, instanceCfg, instanceDir);
+                showSuccessDialogImpl(jarRelativePath, instanceDir, () -> clearJvmAgentForPrism(instanceCfgFinal));
             } else {
                 showErrorDialog(result.error);
             }
         } else if (instanceJson != null && instanceJson.exists() && instanceJson.isFile()) {
-            // ATLauncher - install via instance.json
             InstallResult result = installPreLaunchCommandJson(instanceJson, prelaunchCommandAtLauncher + " " + PRELAUNCH_ARG);
             if (result.success) {
                 ensurePrelaunchTxtExists(instanceDir);
@@ -262,7 +263,6 @@ public class Main {
                 showErrorDialog(result.error);
             }
         } else {
-            // No instance config found - show the setup warning
             showNoInstanceCfgWarning(prelaunchCommand);
         }
     }
@@ -2531,6 +2531,183 @@ public class Main {
     }
 
     /**
+     * Mirrors globals from prismlauncher.cfg/multimc.cfg into instance JvmArgs if
+     * the user had OverrideJavaArgs=false (else flipping to true would silently
+     * drop them). Lookup is walk-up only — no-ops for custom-location instances.
+     */
+    private static InstallResult installJvmAgentForPrism(File instanceCfg, String agentDllAbsolutePath) {
+        InstallResult closeResult = closeLaunchersBeforePreLaunchUpdate();
+        if (!closeResult.success) return closeResult;
+
+        try {
+            String currentOverride = readCfgValue(instanceCfg, "OverrideJavaArgs", "false");
+            String existingInstanceArgs = readCfgValue(instanceCfg, "JvmArgs", "");
+            String mergeBase = existingInstanceArgs;
+            if ("false".equalsIgnoreCase(currentOverride.trim())) {
+                String globalArgs = readGlobalLauncherJvmArgs(instanceCfg);
+                if (!globalArgs.trim().isEmpty()) {
+                    mergeBase = (globalArgs + " " + existingInstanceArgs).trim();
+                }
+            }
+            String finalJvmArgs = mergeJvmArgsPreservingUser(mergeBase, buildAgentPathToken(agentDllAbsolutePath));
+            return rewriteInstanceCfgForAgent(instanceCfg, finalJvmArgs, true);
+        } catch (Exception e) {
+            return new InstallResult(false, e.getMessage());
+        }
+    }
+
+    private static InstallResult clearJvmAgentForPrism(File instanceCfg) {
+        InstallResult closeResult = closeLaunchersBeforePreLaunchUpdate();
+        if (!closeResult.success) return closeResult;
+
+        try {
+            String existingInstanceArgs = readCfgValue(instanceCfg, "JvmArgs", "");
+            String finalJvmArgs = mergeJvmArgsPreservingUser(existingInstanceArgs, null);
+            // Empty → false (resume globals). Non-empty → keep true (user args or
+            // mirrored globals frozen at install time, won't track global changes).
+            boolean override = !finalJvmArgs.trim().isEmpty();
+            return rewriteInstanceCfgForAgent(instanceCfg, finalJvmArgs, override);
+        } catch (Exception e) {
+            return new InstallResult(false, e.getMessage());
+        }
+    }
+
+    // Whitespace-tokenized: quoted args with internal spaces would be corrupted.
+    // Fine for typical -X/-XX/-D single-token args.
+    private static String mergeJvmArgsPreservingUser(String existingValue, String newAgentToken) {
+        StringBuilder sb = new StringBuilder();
+        String brand = PROJECT_NAME.toLowerCase();
+        if (existingValue != null && !existingValue.trim().isEmpty()) {
+            for (String tok : existingValue.trim().split("\\s+")) {
+                if (tok.isEmpty()) continue;
+                String lower = tok.toLowerCase();
+                if (lower.startsWith("-agentpath:") && lower.contains(brand + ".dll")) continue;
+                if (sb.length() > 0) sb.append(' ');
+                sb.append(tok);
+            }
+        }
+        if (newAgentToken != null && !newAgentToken.isEmpty()) {
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(newAgentToken);
+        }
+        return sb.toString();
+    }
+
+    // Forward slashes for Qt's INI parser. 8.3 short form for paths with spaces
+    // (Prism splits JvmArgs on whitespace).
+    private static String buildAgentPathToken(String agentDllAbsolutePath) {
+        String path = agentDllAbsolutePath;
+        if (path.indexOf(' ') >= 0) {
+            String shortForm = tryResolveShortPath(path);
+            if (shortForm != null) path = shortForm;
+        }
+        return "-agentpath:" + path.replace('\\', '/');
+    }
+
+    private static String tryResolveShortPath(String windowsPath) {
+        try {
+            char[] buffer = new char[1024];
+            int len = Kernel32.INSTANCE.GetShortPathName(windowsPath, buffer, buffer.length);
+            if (len > 0 && len < buffer.length) {
+                String result = new String(buffer, 0, len);
+                // 8.3-disabled volumes may return the long path verbatim — treat as failure.
+                if (result.indexOf(' ') < 0) return result;
+            }
+        } catch (Throwable ignored) { }
+        return null;
+    }
+
+    private static String readCfgValue(File cfg, String key, String defaultValue) throws IOException {
+        if (cfg == null || !cfg.isFile()) return defaultValue;
+        String prefix = key + "=";
+        for (String line : readAllLines(cfg)) {
+            if (line.startsWith(prefix)) return line.substring(prefix.length());
+        }
+        return defaultValue;
+    }
+
+    // <dataDir>/instances/<instance>/instance.cfg → <dataDir>/{prismlauncher,multimc}.cfg
+    private static String readGlobalLauncherJvmArgs(File instanceCfg) throws IOException {
+        File instanceDir = instanceCfg.getParentFile();
+        if (instanceDir == null) return "";
+        File instancesDir = instanceDir.getParentFile();
+        if (instancesDir == null) return "";
+        File dataDir = instancesDir.getParentFile();
+        if (dataDir == null) return "";
+
+        File prism = new File(dataDir, "prismlauncher.cfg");
+        if (prism.isFile()) return readCfgValue(prism, "JvmArgs", "");
+        File multimc = new File(dataDir, "multimc.cfg");
+        if (multimc.isFile()) return readCfgValue(multimc, "JvmArgs", "");
+        return "";
+    }
+
+    private static InstallResult rewriteInstanceCfgForAgent(File instanceCfg, String finalJvmArgs, boolean overrideJavaArgs) {
+        try {
+            List<String> lines = readAllLines(instanceCfg);
+            List<String> out = new ArrayList<String>();
+            boolean wroteJvm = false;
+            boolean wroteOverride = false;
+            for (String line : lines) {
+                if (line.startsWith("JvmArgs=")) {
+                    if (!wroteJvm) {
+                        out.add("JvmArgs=" + finalJvmArgs);
+                        wroteJvm = true;
+                    }
+                } else if (line.startsWith("OverrideJavaArgs=")) {
+                    if (!wroteOverride) {
+                        out.add("OverrideJavaArgs=" + overrideJavaArgs);
+                        wroteOverride = true;
+                    }
+                } else if (line.startsWith("PreLaunchCommand=")) {
+                    out.add("PreLaunchCommand=");
+                } else {
+                    out.add(line);
+                }
+            }
+            if (!wroteJvm) out.add("JvmArgs=" + finalJvmArgs);
+            if (!wroteOverride) out.add("OverrideJavaArgs=" + overrideJavaArgs);
+
+            PrintWriter writer = new PrintWriter(new FileWriter(instanceCfg));
+            try {
+                for (String l : out) writer.println(l);
+            } finally {
+                writer.close();
+            }
+            return new InstallResult(true, null);
+        } catch (Exception e) {
+            return new InstallResult(false, e.getMessage());
+        }
+    }
+
+    private static List<String> readAllLines(File f) throws IOException {
+        List<String> result = new ArrayList<String>();
+        BufferedReader r = new BufferedReader(new FileReader(f));
+        try {
+            String line;
+            while ((line = r.readLine()) != null) result.add(line);
+        } finally {
+            r.close();
+        }
+        return result;
+    }
+
+    private static File extractMainDllForAgentInstall() {
+        try {
+            List<Path> extracted = extractEmbeddedDlls();
+            String expected = PROJECT_NAME + ".dll";
+            for (Path p : extracted) {
+                if (p.getFileName().toString().equalsIgnoreCase(expected)) {
+                    return p.toFile();
+                }
+            }
+        } catch (Throwable t) {
+            launcherLog("[install] Failed to extract main DLL: " + t.getClass().getSimpleName() + ": " + t.getMessage());
+        }
+        return null;
+    }
+
+    /**
      * Resolve Prism/MultiMC pre-launch command. Since Prism supports only one
      * pre-launch command, non-EasyInject commands are forwarded as arguments to our JAR.
      */
@@ -3446,6 +3623,17 @@ public class Main {
      * Show success dialog after installation with an undo option.
      */
     private static void showSuccessDialog(String jarFilename, final File instanceCfg, File instanceDir) {
+        showSuccessDialogImpl(jarFilename, instanceDir, () -> uninstallStandard(instanceCfg));
+    }
+
+    private static InstallResult uninstallStandard(File instanceCfg) {
+        if (instanceCfg.getName().toLowerCase().endsWith(".json")) {
+            return installPreLaunchCommandJson(instanceCfg, "");
+        }
+        return installPreLaunchCommand(instanceCfg, "");
+    }
+
+    private static void showSuccessDialogImpl(String jarFilename, File instanceDir, final java.util.function.Supplier<InstallResult> uninstaller) {
         try {
             applyDarkTheme();
 
@@ -3497,13 +3685,7 @@ public class Main {
                         return;
                     }
 
-                    // Clear the PreLaunchCommand - detect file type by name
-                    InstallResult result;
-                    if (instanceCfg.getName().toLowerCase().endsWith(".json")) {
-                        result = installPreLaunchCommandJson(instanceCfg, "");
-                    } else {
-                        result = installPreLaunchCommand(instanceCfg, "");
-                    }
+                    InstallResult result = uninstaller.get();
                     if (result.success) {
                         ((javax.swing.JButton)e.getSource()).setText("Uninstalled");
                         ((javax.swing.JButton)e.getSource()).setEnabled(false);
