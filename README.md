@@ -20,10 +20,7 @@ A variant of EasyInject that bundles DLLs inside the JAR at build time.
 
 ## MultiMC / PrismLauncher Setup
 
-Set **pre-launch command** in Settings → Custom Commands:
-```
-$INST_JAVA -jar EasyInjectBundled-1.0.jar
-```
+Place the JAR in the instance folder and double-click it. The installer writes a `-agentpath:` JVM arg to the instance config; the JVM loads the DLL directly at startup. (The installer kills the launcher first and restarts it on dialog dismiss.)
 
 ## Modrinth App Setup
 
@@ -31,6 +28,6 @@ Place the JAR in the instance's profile folder and double-click it. The installe
 
 ## How It Works
 
-This spawns a background watcher process that waits for Minecraft to start, then injects the bundled DLLs.
+On MultiMC / PrismLauncher the launcher's JVM loads the bundled DLL directly via the documented `-agentpath:` JVMTI ABI — no watcher process, no cross-process injection. The Modrinth App path still uses a background pre-launch hook.
 
 No need to place DLLs next to the JAR - they're already embedded!
