@@ -71,7 +71,7 @@ public class Main {
     private static final String LOG_FILE = "injector.log";
     private static final int POLL_INTERVAL_MS = 500;
     private static final int TARGET_LEAF_RECHECK_INTERVAL_MS = 2000;
-    private static final int TIMEOUT_SECONDS = 60;
+    private static final int TIMEOUT_SECONDS = 120;
     
     private static PrintWriter logWriter = null;
     private static SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
