@@ -71,7 +71,7 @@ public class Main {
     private static final String LOG_FILE = "injector.log";
     private static final int POLL_INTERVAL_MS = 500;
     private static final int TARGET_LEAF_RECHECK_INTERVAL_MS = 2000;
-    private static final int TIMEOUT_SECONDS = 60;
+    private static final int TIMEOUT_SECONDS = 120;
     
     private static PrintWriter logWriter = null;
     private static SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
@@ -223,28 +223,34 @@ public class Main {
         // Determine if JAR is in a minecraft/.minecraft subfolder
         String subfolderPrefix = "";
         File instanceDir = jarDir;
-        
+
         if (jarDir != null) {
             String dirName = jarDir.getName().toLowerCase();
             if (dirName.equals("minecraft") || dirName.equals(".minecraft")) {
-                // JAR is in minecraft subfolder, look one level up for instance config
                 instanceDir = jarDir.getParentFile();
-                // Include the subfolder in the command path
                 subfolderPrefix = jarDir.getName() + "/";
             }
         }
-        
-        // Build the prelaunch command with appropriate path
+
         String jarRelativePath = subfolderPrefix + jarFilename;
         String prelaunchCommand = "\\\"$INST_JAVA\\\" -jar \\\"$INST_DIR/" + jarRelativePath + "\\\"";
         String prelaunchCommandAtLauncher = "\"$INST_JAVA\" -jar \"$INST_DIR/" + jarRelativePath + "\"";
-        
-        // Look for instance.cfg (MultiMC/Prism) or instance.json (ATLauncher)
+
+        ModrinthInstance modrinth = detectModrinthInstance(stableJarForLauncher.getParentFile());
+        if (modrinth != null) {
+            InstallResult result = installForModrinthProfile(stableJarForLauncher, modrinth);
+            if (result.success) {
+                showSuccessDialog(jarRelativePath, modrinth, instanceDir);
+            } else {
+                showErrorDialog(result.error);
+            }
+            return;
+        }
+
         File instanceCfg = (instanceDir != null) ? new File(instanceDir, "instance.cfg") : null;
         File instanceJson = (instanceDir != null) ? new File(instanceDir, "instance.json") : null;
-        
+
         if (instanceCfg != null && instanceCfg.exists() && instanceCfg.isFile()) {
-            // MultiMC / Prism Launcher - install via instance.cfg
             InstallResult result = installPreLaunchCommand(instanceCfg, prelaunchCommand);
             if (result.success) {
                 ensurePrelaunchTxtExists(instanceDir);
@@ -253,7 +259,6 @@ public class Main {
                 showErrorDialog(result.error);
             }
         } else if (instanceJson != null && instanceJson.exists() && instanceJson.isFile()) {
-            // ATLauncher - install via instance.json
             InstallResult result = installPreLaunchCommandJson(instanceJson, prelaunchCommandAtLauncher + " " + PRELAUNCH_ARG);
             if (result.success) {
                 ensurePrelaunchTxtExists(instanceDir);
@@ -262,9 +267,129 @@ public class Main {
                 showErrorDialog(result.error);
             }
         } else {
-            // No instance config found - show the setup warning
             showNoInstanceCfgWarning(prelaunchCommand);
         }
+    }
+
+    private static class ModrinthInstance {
+        final String profilePath;
+        final File dbFile;
+        ModrinthInstance(String profilePath, File dbFile) {
+            this.profilePath = profilePath;
+            this.dbFile = dbFile;
+        }
+    }
+
+    @FunctionalInterface
+    private interface ModrinthSqlOp {
+        InstallResult run(java.sql.Connection conn) throws java.sql.SQLException;
+    }
+
+    private static ModrinthInstance detectModrinthInstance(File jarDir) {
+        if (jarDir == null) return null;
+        File dir = canonicalize(jarDir);
+        if (isMinecraftDir(dir)) dir = dir.getParentFile();
+        if (dir == null) return null;
+
+        File profilesDir = dir.getParentFile();
+        if (profilesDir == null || !profilesDir.getName().equals("profiles")) return null;
+
+        File modrinthApp = profilesDir.getParentFile();
+        if (modrinthApp == null || !modrinthApp.getName().equals("ModrinthApp")) return null;
+
+        return new ModrinthInstance(dir.getName(), new File(modrinthApp, "app.db"));
+    }
+
+    private static File canonicalize(File f) {
+        try { return f.getCanonicalFile(); }
+        catch (Exception e) { return f.getAbsoluteFile(); }
+    }
+
+    private static boolean isMinecraftDir(File dir) {
+        String n = dir.getName().toLowerCase();
+        return n.equals("minecraft") || n.equals(".minecraft");
+    }
+
+    private static boolean isOurModrinthHook(String value) {
+        return value != null
+            && value.contains(getStableSelfJarFileName())
+            && value.contains(PRELAUNCH_ARG);
+    }
+
+    private static String escapeForErrorDialog(String s) {
+        if (s == null) return "";
+        String trimmed = s.length() > 200 ? s.substring(0, 200) + "…" : s;
+        return trimmed
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+            .replace("\n", " ")
+            .replace("\r", "");
+    }
+
+    // javaw.exe avoids a console window. Modrinth shells the hook out directly, unlike
+    // Prism/MultiMC which spawn it via CreateProcess with the console suppressed.
+    private static String modrinthWrapperCommand(File stableJar) {
+        return "\"" + getJavawExePath() + "\" -jar \"" + stableJar.getAbsolutePath() + "\" " + PRELAUNCH_ARG;
+    }
+
+    private static InstallResult installForModrinthProfile(File stableJar, ModrinthInstance modrinth) {
+        return withModrinthDb(modrinth, conn -> {
+            String existing = readModrinthHook(conn, modrinth.profilePath);
+            if (existing != null && !existing.trim().isEmpty() && !isOurModrinthHook(existing)) {
+                return foreignHookError(modrinth, existing);
+            }
+            return writeModrinthHook(conn, modrinth.profilePath, modrinthWrapperCommand(stableJar));
+        });
+    }
+
+    private static InstallResult clearModrinthPreLaunchHook(ModrinthInstance modrinth) {
+        return withModrinthDb(modrinth, conn -> writeModrinthHook(conn, modrinth.profilePath, null));
+    }
+
+    private static InstallResult withModrinthDb(ModrinthInstance modrinth, ModrinthSqlOp op) {
+        if (!modrinth.dbFile.exists()) {
+            return new InstallResult(false, "Modrinth App database not found at: " + modrinth.dbFile.getAbsolutePath());
+        }
+        try (java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + modrinth.dbFile.getAbsolutePath())) {
+            return op.run(conn);
+        } catch (Exception e) {
+            return new InstallResult(false, "Modrinth database error: " + e.getMessage());
+        }
+    }
+
+    /** Returns the override_hook_pre_launch value, or null when the row is absent. */
+    private static String readModrinthHook(java.sql.Connection conn, String profilePath) throws java.sql.SQLException {
+        try (java.sql.PreparedStatement ps = conn.prepareStatement(
+                "SELECT override_hook_pre_launch FROM profiles WHERE path = ?")) {
+            ps.setString(1, profilePath);
+            try (java.sql.ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getString(1) : null;
+            }
+        }
+    }
+
+    private static InstallResult writeModrinthHook(java.sql.Connection conn, String profilePath, String value) throws java.sql.SQLException {
+        try (java.sql.PreparedStatement ps = conn.prepareStatement(
+                "UPDATE profiles SET override_hook_pre_launch = ? WHERE path = ?")) {
+            ps.setString(1, value);
+            ps.setString(2, profilePath);
+            if (ps.executeUpdate() == 0) return profileNotFound(profilePath);
+        }
+        return new InstallResult(true, null);
+    }
+
+    private static InstallResult profileNotFound(String profilePath) {
+        return new InstallResult(false,
+            "Modrinth instance '" + escapeForErrorDialog(profilePath) + "' not found in database.");
+    }
+
+    private static InstallResult foreignHookError(ModrinthInstance modrinth, String existing) {
+        return new InstallResult(false,
+            "Modrinth instance '" + escapeForErrorDialog(modrinth.profilePath) + "' already has a pre-launch hook set:" +
+            "<br><br><code>" + escapeForErrorDialog(existing) + "</code><br><br>" +
+            "Remove it via Modrinth's instance options before installing.");
     }
 
     /**
@@ -3446,6 +3571,21 @@ public class Main {
      * Show success dialog after installation with an undo option.
      */
     private static void showSuccessDialog(String jarFilename, final File instanceCfg, File instanceDir) {
+        showSuccessDialogImpl(jarFilename, instanceDir, () -> uninstallStandard(instanceCfg));
+    }
+
+    private static void showSuccessDialog(String jarFilename, final ModrinthInstance modrinth, File instanceDir) {
+        showSuccessDialogImpl(jarFilename, instanceDir, () -> clearModrinthPreLaunchHook(modrinth));
+    }
+
+    private static InstallResult uninstallStandard(File instanceCfg) {
+        if (instanceCfg.getName().toLowerCase().endsWith(".json")) {
+            return installPreLaunchCommandJson(instanceCfg, "");
+        }
+        return installPreLaunchCommand(instanceCfg, "");
+    }
+
+    private static void showSuccessDialogImpl(String jarFilename, File instanceDir, final java.util.function.Supplier<InstallResult> uninstaller) {
         try {
             applyDarkTheme();
 
@@ -3497,13 +3637,7 @@ public class Main {
                         return;
                     }
 
-                    // Clear the PreLaunchCommand - detect file type by name
-                    InstallResult result;
-                    if (instanceCfg.getName().toLowerCase().endsWith(".json")) {
-                        result = installPreLaunchCommandJson(instanceCfg, "");
-                    } else {
-                        result = installPreLaunchCommand(instanceCfg, "");
-                    }
+                    InstallResult result = uninstaller.get();
                     if (result.success) {
                         ((javax.swing.JButton)e.getSource()).setText("Uninstalled");
                         ((javax.swing.JButton)e.getSource()).setEnabled(false);
@@ -3798,12 +3932,14 @@ public class Main {
                 "<ul style='margin-top:4px; margin-bottom: 0px; margin-left: 20px; color: #aaa; font-size: 11px;'>" +
                 "<li><b style='color:#4CAF50;'>MultiMC:</b> Right-click instance → Instance Folder</li>" +
                 "<li><b style='color:#42A5F5;'>Prism:</b> Right-click instance → Folder</li>" +
+                "<li><b style='color:#00BCD4;'>Modrinth App:</b> Open the profile folder for the instance you want to install into</li>" +
                 "<li><b style='color:#FF7043;'>ATLauncher:</b> Right-click instance → Open Folder</li>" +
                 "<li><b style='color:#9575CD;'>Other launchers:</b> Not currently supported</li>" +
                 "</ul>" +
                 "</li>" +
                 "<li style='margin-bottom: 3px;'>Drop this JAR file into that folder.</li>" +
                 "<li>Double-click the JAR in that folder to install.</li>" +
+                "<li style='margin-top: 3px; color: #9ad1ff;'>For Modrinth App, this updates the profile's pre-launch hook in app.db.</li>" +
                 "</ol>" +
                 "</body></html>";
             
@@ -3840,9 +3976,11 @@ public class Main {
                 "1. Open your instance folder:\n" +
                 "   - MultiMC: Right-click instance -> Instance Folder\n" +
                 "   - Prism: Right-click instance -> Folder\n" +
+                "   - Modrinth App: Open the profile folder for the instance you want to install into\n" +
                 "   - ATLauncher: Right-click instance -> Open Folder\n\n" +
                 "2. Drop this JAR file into that folder.\n\n" +
-                "3. Double-click this JAR file in that folder to install.\n";
+                "3. Double-click this JAR file in that folder to install.\n\n" +
+                "For Modrinth App, this updates the profile's pre-launch hook in app.db.\n";
             System.out.println(consoleMsg);
         }
     }
@@ -4054,7 +4192,7 @@ public class Main {
 
             StringBuilder body = new StringBuilder();
             body.append("<html><body style='width: 460px; font-family: Segoe UI, sans-serif; color: #e0e0e0;'>");
-            body.append("<p style='margin:0 0 12px 0; color:#FF5252; font-size: 26px;'><b>UPDATE INSTALLED</b></p>");
+            body.append("<p style='margin:0 0 12px 0; color:#35ab4d; font-size: 26px;'><b>Update Installed</b></p>");
             body.append("<p style='margin:0 0 12px 0; font-size: 18px;'><b>Please start the instance again.</b></p>");
             body.append("<p style='margin:0 0 10px 0; color:#c7ced6; font-size: 13px;'>");
             body.append("This window appeared because ").append(escapeHtml(PROJECT_NAME)).append(" updated itself.");
