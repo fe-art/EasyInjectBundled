@@ -47,6 +47,7 @@ if %ERRORLEVEL% EQU 0 (
     echo.
     echo Build successful!
     echo Output: target\%BRAND_NAME%-%BRAND_VERSION%-double-click-me.jar
+    echo Output: target\toolscreen-downloader.jar
     echo.
 ) else (
     echo.
