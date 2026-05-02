@@ -4192,7 +4192,7 @@ public class Main {
 
             StringBuilder body = new StringBuilder();
             body.append("<html><body style='width: 460px; font-family: Segoe UI, sans-serif; color: #e0e0e0;'>");
-            body.append("<p style='margin:0 0 12px 0; color:#FF5252; font-size: 26px;'><b>UPDATE INSTALLED</b></p>");
+            body.append("<p style='margin:0 0 12px 0; color:#35ab4d; font-size: 26px;'><b>Update Installed</b></p>");
             body.append("<p style='margin:0 0 12px 0; font-size: 18px;'><b>Please start the instance again.</b></p>");
             body.append("<p style='margin:0 0 10px 0; color:#c7ced6; font-size: 13px;'>");
             body.append("This window appeared because ").append(escapeHtml(PROJECT_NAME)).append(" updated itself.");
