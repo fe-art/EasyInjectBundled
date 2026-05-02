@@ -2785,6 +2785,9 @@ public class Main {
                 if (!closeResult.success) {
                     return closeResult;
                 }
+                if (!AtLauncherSupport.ensureClosedInteractive()) {
+                    return new InstallResult(false, "Installation cancelled by user.");
+                }
             }
 
             if (foundPreLaunchCommand && preLaunchLineIndex >= 0) {
