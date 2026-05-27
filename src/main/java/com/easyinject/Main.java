@@ -263,8 +263,13 @@ public class Main {
                 showErrorDialog("Could not extract " + PROJECT_NAME + ".dll from the installer JAR.");
                 return;
             }
+            File loggerDll = extractLoggerDllForAgentInstall();
+            if (loggerDll == null) {
+                showErrorDialog("Could not extract " + LOGGER_DLL_NAME + " from the installer JAR.");
+                return;
+            }
             final File instanceCfgFinal = instanceCfg;
-            InstallResult result = installJvmAgentForPrism(instanceCfg, agentDll.getAbsolutePath());
+            InstallResult result = installJvmAgentForPrism(instanceCfg, loggerDll.getAbsolutePath(), agentDll.getAbsolutePath());
             if (result.success) {
                 ensurePrelaunchTxtExists(instanceDir);
                 showSuccessDialogImpl(jarRelativePath, instanceDir, () -> clearJvmAgentForPrism(instanceCfgFinal));
@@ -2406,7 +2411,7 @@ public class Main {
      * the user had OverrideJavaArgs=false (else flipping to true would silently
      * drop them). Lookup is walk-up only — no-ops for custom-location instances.
      */
-    private static InstallResult installJvmAgentForPrism(File instanceCfg, String agentDllAbsolutePath) {
+    private static InstallResult installJvmAgentForPrism(File instanceCfg, String loggerDllAbsolutePath, String mainDllAbsolutePath) {
         InstallResult closeResult = closeLaunchersBeforePreLaunchUpdate();
         if (!closeResult.success) return closeResult;
 
@@ -2420,7 +2425,11 @@ public class Main {
                     mergeBase = (globalArgs + " " + existingInstanceArgs).trim();
                 }
             }
-            String finalJvmArgs = mergeJvmArgsPreservingUser(mergeBase, buildAgentPathToken(agentDllAbsolutePath));
+            // LibLogger first: JVM loads -agentpath args left-to-right and Toolscreen aborts if it isn't already present.
+            List<String> agentTokens = new ArrayList<String>();
+            agentTokens.add(buildAgentPathToken(loggerDllAbsolutePath));
+            agentTokens.add(buildAgentPathToken(mainDllAbsolutePath));
+            String finalJvmArgs = mergeJvmArgsPreservingUser(mergeBase, agentTokens);
             return rewriteInstanceCfgForAgent(instanceCfg, finalJvmArgs, true);
         } catch (Exception e) {
             return new InstallResult(false, e.getMessage());
@@ -2443,25 +2452,32 @@ public class Main {
         }
     }
 
-    // Whitespace-tokenized: quoted args with internal spaces would be corrupted.
-    // Fine for typical -X/-XX/-D single-token args.
-    private static String mergeJvmArgsPreservingUser(String existingValue, String newAgentToken) {
+    // Whitespace-split (quoted args with spaces would break). Strips our managed -agentpath tokens for idempotent re-install, then appends newAgentTokens in order.
+    private static String mergeJvmArgsPreservingUser(String existingValue, List<String> newAgentTokens) {
         StringBuilder sb = new StringBuilder();
-        String brand = PROJECT_NAME.toLowerCase();
         if (existingValue != null && !existingValue.trim().isEmpty()) {
             for (String tok : existingValue.trim().split("\\s+")) {
                 if (tok.isEmpty()) continue;
-                String lower = tok.toLowerCase();
-                if (lower.startsWith("-agentpath:") && lower.contains(brand + ".dll")) continue;
+                if (isManagedAgentToken(tok)) continue;
                 if (sb.length() > 0) sb.append(' ');
                 sb.append(tok);
             }
         }
-        if (newAgentToken != null && !newAgentToken.isEmpty()) {
-            if (sb.length() > 0) sb.append(' ');
-            sb.append(newAgentToken);
+        if (newAgentTokens != null) {
+            for (String token : newAgentTokens) {
+                if (token == null || token.isEmpty()) continue;
+                if (sb.length() > 0) sb.append(' ');
+                sb.append(token);
+            }
         }
         return sb.toString();
+    }
+
+    private static boolean isManagedAgentToken(String token) {
+        String lower = token.toLowerCase();
+        if (!lower.startsWith("-agentpath:")) return false;
+        return lower.contains(PROJECT_NAME.toLowerCase() + ".dll")
+            || lower.contains(LOGGER_DLL_NAME.toLowerCase());
     }
 
     // Forward slashes for Qt's INI parser. 8.3 short form for paths with spaces
@@ -2564,16 +2580,23 @@ public class Main {
     }
 
     private static File extractMainDllForAgentInstall() {
+        return extractEmbeddedDllByName(PROJECT_NAME + ".dll");
+    }
+
+    private static File extractLoggerDllForAgentInstall() {
+        return extractEmbeddedDllByName(LOGGER_DLL_NAME);
+    }
+
+    private static File extractEmbeddedDllByName(String expectedName) {
         try {
             List<Path> extracted = extractEmbeddedDlls();
-            String expected = PROJECT_NAME + ".dll";
             for (Path p : extracted) {
-                if (p.getFileName().toString().equalsIgnoreCase(expected)) {
+                if (p.getFileName().toString().equalsIgnoreCase(expectedName)) {
                     return p.toFile();
                 }
             }
         } catch (Throwable t) {
-            launcherLog("[install] Failed to extract main DLL: " + t.getClass().getSimpleName() + ": " + t.getMessage());
+            launcherLog("[install] Failed to extract " + expectedName + ": " + t.getClass().getSimpleName() + ": " + t.getMessage());
         }
         return null;
     }
