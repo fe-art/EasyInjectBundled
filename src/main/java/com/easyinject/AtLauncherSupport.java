@@ -9,7 +9,7 @@ final class AtLauncherSupport {
 
     private AtLauncherSupport() {}
 
-    static boolean isRunning() {
+    public static boolean isRunning() {
         try {
             List<ProcessUtils.ProcessInfo> javaProcs = ProcessUtils.findProcessesByImageNames(
                 "javaw.exe",
@@ -28,7 +28,7 @@ final class AtLauncherSupport {
         return false;
     }
 
-    static boolean ensureClosedInteractive() {
+    public static boolean ensureClosedInteractive() {
         while (isRunning()) {
             if (promptCloseDialog() != javax.swing.JOptionPane.OK_OPTION) {
                 return false;
