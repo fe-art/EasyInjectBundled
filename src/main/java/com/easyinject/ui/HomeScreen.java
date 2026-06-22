@@ -16,6 +16,7 @@ public class HomeScreen extends InstallerWindow.ScreenPanel {
     private final JLabel launcherLabel;
     private final JLabel instanceLabel;
     private final JLabel pathLabel;
+    private final JLabel mcsrGuidance;
     private final JPanel noInstancePanel;
     private final JButton installBtn;
     private final JButton repairBtn;
@@ -31,17 +32,22 @@ public class HomeScreen extends InstallerWindow.ScreenPanel {
 
         // ── Instance info card ──────────────────────────────────────────
         infoCard = Theme.createCard();
-        infoCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, 100));
+        // No fixed max height: let the wrapping path/MCSR labels size the card.
 
         launcherLabel = Theme.createLabel("Launcher: —", Theme.BODY_FONT, Theme.FG);
         instanceLabel = Theme.createLabel("Instance: —", Theme.BODY_FONT, Theme.INFO);
         pathLabel = Theme.createLabel("Path: —", Theme.SMALL_FONT, Theme.SUBTLE);
+
+        mcsrGuidance = new JLabel();
+        mcsrGuidance.setAlignmentX(Component.LEFT_ALIGNMENT);
+        mcsrGuidance.setVisible(false);
 
         infoCard.add(launcherLabel);
         infoCard.add(Box.createVerticalStrut(4));
         infoCard.add(instanceLabel);
         infoCard.add(Box.createVerticalStrut(4));
         infoCard.add(pathLabel);
+        infoCard.add(mcsrGuidance);
 
         center.add(infoCard);
         center.add(Box.createVerticalStrut(16));
@@ -128,6 +134,14 @@ public class HomeScreen extends InstallerWindow.ScreenPanel {
         detectInstance();
     }
 
+    @Override
+    public void addNotify() {
+        super.addNotify();
+        // Make Enter trigger Install when this screen is realized.
+        JRootPane rp = getRootPane();
+        if (rp != null) rp.setDefaultButton(installBtn);
+    }
+
     /**
      * Small holder carrying the detection result from the background worker
      * back to the EDT.
@@ -154,6 +168,9 @@ public class HomeScreen extends InstallerWindow.ScreenPanel {
         launcherLabel.setText("Detecting instance…");
         instanceLabel.setText("Instance: —");
         pathLabel.setText("Path: —");
+        pathLabel.setToolTipText(null);
+        pathLabel.setVisible(true);
+        mcsrGuidance.setVisible(false);
         installBtn.setEnabled(false);
         repairBtn.setEnabled(false);
         uninstallBtn.setEnabled(false);
@@ -189,8 +206,7 @@ public class HomeScreen extends InstallerWindow.ScreenPanel {
 
                     // Resolve instance root directory
                     File instanceDir = jarDir;
-                    String dirName = jarDir.getName().toLowerCase();
-                    if (dirName.equals("minecraft") || dirName.equals(".minecraft")) {
+                    if (Main.isMinecraftDir(jarDir)) {
                         instanceDir = jarDir.getParentFile();
                     }
                     r.instanceDir = instanceDir;
@@ -298,7 +314,14 @@ public class HomeScreen extends InstallerWindow.ScreenPanel {
     private void showInstanceInfo() {
         launcherLabel.setText("Launcher:  " + window.getDetectedLauncher());
         instanceLabel.setText("Instance:  " + window.getInstanceName());
-        pathLabel.setText("Path:  " + window.getInstanceDir().getAbsolutePath());
+
+        String fullPath = window.getInstanceDir().getAbsolutePath();
+        // HTML label with fixed width so long Windows paths wrap instead of clipping.
+        pathLabel.setText("<html><div style='width:480px;'>Path:&nbsp;&nbsp;"
+            + Theme.escapeHtml(fullPath) + "</div></html>");
+        pathLabel.setToolTipText(fullPath);
+        pathLabel.setVisible(true);
+        mcsrGuidance.setVisible(false);
 
         infoCard.setVisible(true);
         noInstancePanel.setVisible(false);
@@ -322,7 +345,26 @@ public class HomeScreen extends InstallerWindow.ScreenPanel {
     private void showMcsrManaged() {
         launcherLabel.setText("Launcher:  MCSR Launcher");
         instanceLabel.setText("Instance:  " + (window.getInstanceName() != null ? window.getInstanceName() : "—"));
-        pathLabel.setText("Managed by MCSR Launcher — enable Toolscreen from the launcher's instance tools.");
+
+        // Show the actual path (or hide if unknown) and put the guidance in its
+        // own wrapping label instead of stuffing a sentence into the path slot.
+        File mcsrDir = window.getInstanceDir();
+        if (mcsrDir != null) {
+            String fullPath = mcsrDir.getAbsolutePath();
+            pathLabel.setText("<html><div style='width:480px;'>Path:&nbsp;&nbsp;"
+                + Theme.escapeHtml(fullPath) + "</div></html>");
+            pathLabel.setToolTipText(fullPath);
+            pathLabel.setVisible(true);
+        } else {
+            pathLabel.setVisible(false);
+        }
+
+        mcsrGuidance.setText("<html><div style='width:480px; color:#c7ced6;'>"
+            + "Managed by MCSR Launcher &mdash; enable Toolscreen from the launcher's instance tools."
+            + "</div></html>");
+        mcsrGuidance.setFont(Theme.SMALL_FONT);
+        mcsrGuidance.setForeground(Theme.SUBTLE);
+        mcsrGuidance.setVisible(true);
 
         infoCard.setVisible(true);
         noInstancePanel.setVisible(false);

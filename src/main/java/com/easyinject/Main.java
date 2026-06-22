@@ -69,6 +69,7 @@ public class Main {
     private static final String DEFENDER_ELEVATED_ENSURE_ARG = "--defender-elevated-ensure";
     private static final String DEFENDER_ELEVATED_SELFJAR_ARG = "--defender-elevated-selfjar";
     private static final String DEFENDER_ELEVATED_OUT_ARG = "--defender-elevated-out";
+    public static final String DEFENDER_EXCLUSIONS_PATHS_KEY = "HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Exclusions\\Paths";
     private static final String DLL_RESOURCE_PATH = "dlls/";
     private static final String LOGGER_DLL_NAME = "liblogger_x64.dll";
     private static final String LOG_FILE = "injector.log";
@@ -165,117 +166,6 @@ public class Main {
         }
     }
 
-    /**
-     * Handle double-click: look for instance.cfg (MultiMC/Prism) or instance.json (ATLauncher)
-     * and install PreLaunchCommand.
-     */
-    private static void showDoubleClickWarning() {
-        if (isMcsrLauncherInstance(resolveInstanceDirFromJar())) {
-            showMcsrLauncherWarning();
-            return;
-        }
-
-        // If the user double-clicks the JAR, start with a clean log for easier troubleshooting.
-        resetLogFilesForStartup();
-
-        // Get the actual JAR file and its directory. We must be able to create a stable jar copy.
-        String jarFilename = getStableSelfJarFileName();
-        File jarDir = null;
-        File stableJarForLauncher = null;
-        try {
-            String jarPath = getJarPath();
-            File jarFile = new File(jarPath);
-            if (jarFile.isFile()) {
-                jarDir = jarFile.getParentFile();
-
-                // For launcher integration, always install/run via a stable filename:
-                // <brand>.jar in the same folder as the current jar.
-                // This keeps the MultiMC/Prism PreLaunchCommand stable across updates.
-                File stableJar = new File(jarDir, getStableSelfJarFileName());
-                if (!stableJar.getAbsolutePath().equalsIgnoreCase(jarFile.getAbsolutePath())) {
-                    try {
-                        Files.copy(jarFile.toPath(), stableJar.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                        jarFilename = stableJar.getName();
-                        stableJarForLauncher = stableJar;
-                    } catch (Throwable copyErr) {
-                        // If we can't create the stable jar, don't install a broken prelaunch command.
-                        showErrorDialog(
-                            "Failed to create/replace " + stableJar.getName() + " next to the current JAR.\n\n" +
-                            "This usually means the file is currently in use (busy/locked) or blocked by antivirus.\n\n" +
-                            "Close MultiMC/Prism/any process using it and try again.\n\n" +
-                            "Reason: " + (copyErr.getMessage() != null ? copyErr.getMessage() : copyErr.toString())
-                        );
-                        return;
-                    }
-                } else {
-                    jarFilename = jarFile.getName();
-                    stableJarForLauncher = jarFile;
-                }
-            }
-        } catch (Exception e) {
-            // Use default name if we can't get the path
-        }
-
-        if (jarDir == null || stableJarForLauncher == null) {
-            showErrorDialog("Could not resolve the current JAR path to create " + getStableSelfJarFileName() + ".\n\n" +
-                "Please run this from a JAR file (not from an IDE/classpath) and try again.");
-            return;
-        }
-
-        // Prepare persistent DLL directory + Defender exclusion (may trigger UAC)
-        // This must be based on the stable launcher jar (e.g. Toolscreen.jar).
-        prepareDllFolderAndDefenderExclusionForInstall(stableJarForLauncher);
-        
-        // Determine if JAR is in a minecraft/.minecraft subfolder
-        String subfolderPrefix = "";
-        File instanceDir = jarDir;
-
-        if (jarDir != null) {
-            String dirName = jarDir.getName().toLowerCase();
-            if (dirName.equals("minecraft") || dirName.equals(".minecraft")) {
-                instanceDir = jarDir.getParentFile();
-                subfolderPrefix = jarDir.getName() + "/";
-            }
-        }
-
-        String jarRelativePath = subfolderPrefix + jarFilename;
-        String prelaunchCommand = "\\\"$INST_JAVA\\\" -jar \\\"$INST_DIR/" + jarRelativePath + "\\\"";
-        String prelaunchCommandAtLauncher = "\"$INST_JAVA\" -jar \"$INST_DIR/" + jarRelativePath + "\"";
-
-        ModrinthInstance modrinth = detectModrinthInstance(stableJarForLauncher.getParentFile());
-        if (modrinth != null) {
-            InstallResult result = installForModrinthProfile(stableJarForLauncher, modrinth);
-            if (result.success) {
-                showSuccessDialog(jarRelativePath, modrinth, instanceDir);
-            } else {
-                showErrorDialog(result.error);
-            }
-            return;
-        }
-
-        File instanceCfg = (instanceDir != null) ? new File(instanceDir, "instance.cfg") : null;
-        File instanceJson = (instanceDir != null) ? new File(instanceDir, "instance.json") : null;
-
-        if (instanceCfg != null && instanceCfg.exists() && instanceCfg.isFile()) {
-            InstallResult result = installPreLaunchCommand(instanceCfg, prelaunchCommand);
-            if (result.success) {
-                ensurePrelaunchTxtExists(instanceDir);
-                showSuccessDialog(jarRelativePath, instanceCfg, instanceDir);
-            } else {
-                showErrorDialog(result.error);
-            }
-        } else if (instanceJson != null && instanceJson.exists() && instanceJson.isFile()) {
-            InstallResult result = installPreLaunchCommandJson(instanceJson, prelaunchCommandAtLauncher + " " + PRELAUNCH_ARG);
-            if (result.success) {
-                ensurePrelaunchTxtExists(instanceDir);
-                showSuccessDialog(jarRelativePath, instanceJson, instanceDir);
-            } else {
-                showErrorDialog(result.error);
-            }
-        } else {
-            showNoInstanceCfgWarning(prelaunchCommand);
-        }
-    }
 
     public static class ModrinthInstance {
         public final String profilePath;
@@ -314,7 +204,7 @@ public class Main {
         catch (Exception e) { return f.getAbsoluteFile(); }
     }
 
-    private static boolean isMinecraftDir(File dir) {
+    public static boolean isMinecraftDir(File dir) {
         String n = dir.getName().toLowerCase();
         return n.equals("minecraft") || n.equals(".minecraft");
     }
@@ -466,38 +356,6 @@ public class Main {
     }
 
     /**
-     * On double-click install: ensure the persistent DLL folder exists and is excluded from Windows Defender.
-     *
-     * This is best-effort and non-fatal: the launcher integration can still be installed even if Defender
-     * exclusion fails (e.g. user cancels UAC, Defender cmdlets unavailable, etc).
-     */
-    private static void prepareDllFolderAndDefenderExclusionForInstall(File jarToExclude) {
-        try {
-            PrepareDllFolderResult r = prepareDllFolderAndDefenderExclusion(jarToExclude);
-            if (r == null) {
-                return;
-            }
-
-            if (!r.folderReady || (!r.defenderExcluded && !r.defenderExclusionSkipped)) {
-                // Folder creation failure is unrecoverable for our use-case.
-                if (!r.folderReady) {
-                    showFatalWarningDialogAndExit(r.message != null ? r.message : "Could not create DLL folder");
-                    return;
-                }
-
-                // Defender exclusion failure may be fixable by user action; guide and keep retrying.
-                // If the user explicitly chose to continue without exclusions, do not block here.
-                if (!r.defenderExclusionSkipped) {
-                    File preferredDllDir = getPreferredPersistentDllDir();
-                    guideUserThroughManualDefenderExclusionUntilDone(preferredDllDir, jarToExclude, r.message);
-                }
-            }
-        } catch (Throwable ignored) {
-            // Non-fatal.
-        }
-    }
-
-    /**
      * If automatic Defender exclusion fails, guide the user through manually adding the exclusion.
      * This method does not return until the exclusion is detected (or the process is killed).
      */
@@ -506,7 +364,7 @@ public class Main {
             return;
         }
 
-        final String exclusionsKey = "HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Exclusions\\Paths";
+        final String exclusionsKey = DEFENDER_EXCLUSIONS_PATHS_KEY;
         final String path = normalizePathForDefenderExclusionCheck(dllDir.getAbsolutePath());
 
         final String jarCheckPath = (jarToExclude != null)
@@ -1020,7 +878,7 @@ public class Main {
         // 1) First try non-elevated detection (fast). This avoids prompting when we can already tell.
         // 2) If not detected, ask user consent and then run ONE elevated helper (UAC once) that both
         //    checks via Get-MpPreference and adds the exclusion if needed.
-        final String exclusionsKey = "HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Exclusions\\Paths";
+        final String exclusionsKey = DEFENDER_EXCLUSIONS_PATHS_KEY;
         final String jarCheckPath = (jarToExclude != null)
             ? normalizePathForDefenderExclusionCheck(jarToExclude.getAbsolutePath())
             : null;
@@ -1641,7 +1499,7 @@ public class Main {
         // Single-UAC policy:
         // We intentionally consolidate all elevated operations into ONE PowerShell elevation.
         // This prevents scenarios where we would prompt multiple times (e.g. elevated reg.exe + elevated PS).
-        final String exclusionsKey = "HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Exclusions\\Paths";
+        final String exclusionsKey = DEFENDER_EXCLUSIONS_PATHS_KEY;
 
         // If already present, treat as success.
         if (isDefenderExclusionPresent(exclusionsKey, path)) {
@@ -3310,176 +3168,6 @@ public class Main {
     }
 
     /**
-     * Show success dialog after installation with an undo option.
-     */
-    private static void showSuccessDialog(String jarFilename, final File instanceCfg, File instanceDir) {
-        showSuccessDialogImpl(jarFilename, instanceDir, () -> uninstallStandard(instanceCfg));
-    }
-
-    private static void showSuccessDialog(String jarFilename, final ModrinthInstance modrinth, File instanceDir) {
-        showSuccessDialogImpl(jarFilename, instanceDir, () -> clearModrinthPreLaunchHook(modrinth));
-    }
-
-    private static InstallResult uninstallStandard(File instanceCfg) {
-        if (instanceCfg.getName().toLowerCase().endsWith(".json")) {
-            return installPreLaunchCommandJson(instanceCfg, "");
-        }
-        return installPreLaunchCommand(instanceCfg, "");
-    }
-
-    private static void showSuccessDialogImpl(String jarFilename, File instanceDir, final java.util.function.Supplier<InstallResult> uninstaller) {
-        try {
-            applyDarkTheme();
-
-            final java.awt.Color bg = new java.awt.Color(43, 43, 43);
-
-            // Derive instance info
-            String instanceName = (instanceDir != null) ? instanceDir.getName() : "Unknown";
-            String instancePath = (instanceDir != null) ? instanceDir.getAbsolutePath() : "Unknown";
-
-            // Create main content panel
-            javax.swing.JPanel panel = new javax.swing.JPanel();
-            panel.setOpaque(true);
-            panel.setBackground(bg);
-            panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
-            panel.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 4, 4, 4));
-            
-            // Header panel with Title and Uninstall button
-            javax.swing.JPanel headerPanel = new javax.swing.JPanel(new java.awt.BorderLayout());
-            headerPanel.setOpaque(true);
-            headerPanel.setBackground(bg);
-            headerPanel.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
-            
-            // Title Label with icon (avoids missing-glyph boxes on some systems)
-            javax.swing.JLabel titleLabel = new javax.swing.JLabel("Installed Successfully!");
-            titleLabel.setIcon(createSuccessStatusIcon());
-            titleLabel.setIconTextGap(8);
-            titleLabel.setFont(new java.awt.Font("Segoe UI", java.awt.Font.BOLD, 16));
-            titleLabel.setForeground(new java.awt.Color(76, 175, 80)); // #4CAF50
-            headerPanel.add(titleLabel, java.awt.BorderLayout.CENTER);
-
-            // Uninstall Button
-            javax.swing.JButton uninstallBtn = createStyledButton("Uninstall");
-            // Adjust button style for header (smaller padding)
-            uninstallBtn.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 12, 4, 12));
-            uninstallBtn.setFont(new java.awt.Font("Segoe UI", java.awt.Font.BOLD, 11));
-            
-            uninstallBtn.addActionListener(new java.awt.event.ActionListener() {
-                public void actionPerformed(java.awt.event.ActionEvent e) {
-                    // Confirmation dialog
-                    int choice = javax.swing.JOptionPane.showConfirmDialog(
-                        javax.swing.SwingUtilities.getWindowAncestor(uninstallBtn),
-                        "Are you sure you want to undo the installation?\nThis will remove the launcher integration.",
-                        "Confirm Uninstall",
-                        javax.swing.JOptionPane.YES_NO_OPTION,
-                        javax.swing.JOptionPane.WARNING_MESSAGE
-                    );
-                    
-                    if (choice != javax.swing.JOptionPane.YES_OPTION) {
-                        return;
-                    }
-
-                    InstallResult result = uninstaller.get();
-                    if (result.success) {
-                        ((javax.swing.JButton)e.getSource()).setText("Uninstalled");
-                        ((javax.swing.JButton)e.getSource()).setEnabled(false);
-                        titleLabel.setIcon(null);
-                        titleLabel.setText("Uninstalled!");
-                        titleLabel.setForeground(new java.awt.Color(224, 224, 224));
-                    } else {
-                        ((javax.swing.JButton)e.getSource()).setText("Error");
-                        javax.swing.JOptionPane.showMessageDialog(
-                            javax.swing.SwingUtilities.getWindowAncestor(uninstallBtn), 
-                            "Failed: " + result.error, 
-                            "Error", 
-                            javax.swing.JOptionPane.ERROR_MESSAGE
-                        );
-                    }
-                }
-            });
-            headerPanel.add(uninstallBtn, java.awt.BorderLayout.EAST);
-            
-            panel.add(headerPanel);
-            panel.add(javax.swing.Box.createVerticalStrut(10));
-
-            String message = 
-                "<html><body style='font-family: Segoe UI, sans-serif; color: #e0e0e0;'>" +
-                "<p style='margin:0 0 8px 0;'>" + PROJECT_NAME + " has been configured for this instance.</p>" +
-                "<table style='margin:0 0 10px 0; color: #d9d9d9; font-size: 12px;'>" +
-                "<tr><td style='padding:2px 10px 2px 0; color: #c7ced6;'>Instance</td><td style='color:#81D4FA;'><b>" + instanceName + "</b></td></tr>" +
-                "<tr><td style='padding:2px 10px 2px 0; color: #c7ced6;'>Path</td><td style='color: #c7ced6; font-size: 11px;'>" + instancePath + "</td></tr>" +
-                "</table>" +
-                "<p style='margin:0; color: #c7ced6; font-size: 11px;'>You can now launch Minecraft from your launcher.</p>" +
-                "</body></html>";
-            
-            javax.swing.JLabel msgLabel = new javax.swing.JLabel(message);
-            msgLabel.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
-            panel.add(msgLabel);
-            
-            // Create styled OK button
-            javax.swing.JButton okButton = createStyledButton("OK");
-
-            // Use a custom dialog instead of JOptionPane to avoid Windows L&F ghosting artifacts
-            // (stale text being left behind in the bottom-right).
-            final javax.swing.JDialog dialog = new javax.swing.JDialog((java.awt.Frame) null, PROJECT_NAME + " v" + VERSION + " — Installed", true);
-            dialog.setDefaultCloseOperation(javax.swing.WindowConstants.DISPOSE_ON_CLOSE);
-            dialog.setResizable(false);
-            try {
-                javax.swing.RepaintManager.currentManager(dialog).setDoubleBufferingEnabled(true);
-            } catch (Throwable ignored) {
-                // ignore
-            }
-
-            // Paint full background every repaint to prevent hover/partial repaint artifacts.
-            javax.swing.JPanel root = new javax.swing.JPanel(new java.awt.BorderLayout(0, 10)) {
-                @Override
-                protected void paintComponent(java.awt.Graphics g) {
-                    g.setColor(bg);
-                    g.fillRect(0, 0, getWidth(), getHeight());
-                    super.paintComponent(g);
-                }
-            };
-            // Keep the root panel opaque to avoid hover/unhover ghosting on some Windows L&Fs.
-            root.setOpaque(true);
-            root.setBackground(bg);
-            root.setDoubleBuffered(true);
-            root.setBorder(javax.swing.BorderFactory.createEmptyBorder(12, 12, 12, 12));
-            root.setPreferredSize(new java.awt.Dimension(560, 240));
-
-            root.add(panel, java.awt.BorderLayout.CENTER);
-
-            javax.swing.JPanel buttons = new javax.swing.JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.CENTER, 0, 0));
-            buttons.setOpaque(true);
-            buttons.setBackground(bg);
-            buttons.add(okButton);
-            root.add(buttons, java.awt.BorderLayout.SOUTH);
-
-            okButton.addActionListener(new java.awt.event.ActionListener() {
-                public void actionPerformed(java.awt.event.ActionEvent e) {
-                    dialog.dispose();
-                }
-            });
-
-            dialog.setContentPane(root);
-            dialog.pack();
-            dialog.setMinimumSize(new java.awt.Dimension(560, 240));
-            dialog.setLocationRelativeTo(null);
-            dialog.setVisible(true);
-
-            restartSavedLaunchersAfterConfirmation();
-        } catch (Exception e) {
-            // If GUI fails, print to console
-            System.out.println("=======================================================");
-            System.out.println("  " + PROJECT_NAME + " - Installed Successfully!");
-            System.out.println("=======================================================");
-            System.out.println();
-            System.out.println("PreLaunchCommand has been configured.");
-            System.out.println("You can now launch Minecraft from your launcher.");
-            restartSavedLaunchersAfterConfirmation();
-        }
-    }
-
-    /**
      * Show error dialog when installation fails.
      */
     private static void showErrorDialog(String error) {
@@ -3656,73 +3344,6 @@ public class Main {
                 return size;
             }
         };
-    }
-
-    /**
-     * Show warning when instance.cfg is not found.
-     */
-    private static void showNoInstanceCfgWarning(String prelaunchCommand) {
-        try {
-            applyDarkTheme();
-
-            String message = 
-                "<html><body style='width: 360px; font-family: Segoe UI, sans-serif; color: #e0e0e0;'>" +
-                "<p style='margin:0 0 10px 0; color: #FFA726; font-size: 15px;'><b>⚠ Setup Required</b></p>" +
-                "<p style='margin:0 0 10px 0;'>To install " + PROJECT_NAME + ", follow these steps:</p>" +
-                "<ol style='margin:0 0 0 0; padding-left: 20px; color: #ccc;'>" +
-                "<li style='margin-bottom: 3px;'>Open your instance folder:" +
-                "<ul style='margin-top:4px; margin-bottom: 0px; margin-left: 20px; color: #aaa; font-size: 11px;'>" +
-                "<li><b style='color:#4CAF50;'>MultiMC:</b> Right-click instance → Instance Folder</li>" +
-                "<li><b style='color:#42A5F5;'>Prism:</b> Right-click instance → Folder</li>" +
-                "<li><b style='color:#00BCD4;'>Modrinth App:</b> Click the ⋮ button on the instance → Open folder</li>" +
-                "<li><b style='color:#FF7043;'>ATLauncher:</b> Right-click instance → Open Folder</li>" +
-                "<li><b style='color:#9575CD;'>Other launchers:</b> Not currently supported</li>" +
-                "</ul>" +
-                "</li>" +
-                "<li style='margin-bottom: 3px;'>Drop this JAR file into that folder.</li>" +
-                "<li>Double-click the JAR in that folder to install.</li>" +
-                "</ol>" +
-                "</body></html>";
-            
-            javax.swing.JLabel msgLabel = new javax.swing.JLabel(message);
-            
-            // Show dialog
-            // Create styled OK button
-            javax.swing.JButton okButton = createStyledButton("OK");
-            okButton.addActionListener(new java.awt.event.ActionListener() {
-                public void actionPerformed(java.awt.event.ActionEvent e) {
-                    java.awt.Window w = javax.swing.SwingUtilities.getWindowAncestor(okButton);
-                    if (w != null) w.dispose();
-                }
-            });
-
-            // Show dialog with custom button
-            javax.swing.JOptionPane.showOptionDialog(
-                null,
-                msgLabel,
-                PROJECT_NAME + " v" + VERSION + " — Setup Required",
-                javax.swing.JOptionPane.DEFAULT_OPTION,
-                javax.swing.JOptionPane.PLAIN_MESSAGE,
-                null,
-                new Object[]{ okButton },
-                okButton
-            );
-        } catch (Exception e) {
-            // If GUI fails, print to console and wait for input
-            String consoleMsg = 
-                "=======================================================\n" +
-                "  " + PROJECT_NAME + " v" + VERSION + "\n" +
-                "=======================================================\n\n" +
-                "To install, follow these steps:\n\n" +
-                "1. Open your instance folder:\n" +
-                "   - MultiMC: Right-click instance -> Instance Folder\n" +
-                "   - Prism: Right-click instance -> Folder\n" +
-                "   - Modrinth App: Click the ⋮ button on the instance -> Open folder\n" +
-                "   - ATLauncher: Right-click instance -> Open Folder\n\n" +
-                "2. Drop this JAR file into that folder.\n\n" +
-                "3. Double-click this JAR file in that folder to install.\n\n";
-            System.out.println(consoleMsg);
-        }
     }
 
     private static final String TOOLSCREEN_DISCORD_URL = "https://discord.gg/A2v6bCJg6K";

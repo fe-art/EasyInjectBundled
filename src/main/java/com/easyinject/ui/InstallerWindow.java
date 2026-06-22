@@ -115,13 +115,6 @@ public class InstallerWindow extends JFrame {
     public void showScreen(String name) {
         cardLayout.show(contentPanel, name);
 
-        // Notify screen that it's being shown
-        for (Component c : contentPanel.getComponents()) {
-            if (c instanceof ScreenPanel) {
-                // Not visible yet when switching — check by card name
-            }
-        }
-
         // Refresh the newly-visible panel
         contentPanel.revalidate();
         contentPanel.repaint();

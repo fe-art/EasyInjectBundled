@@ -25,9 +25,10 @@ public final class Theme {
     public static final Color SUCCESS   = new Color(76, 175, 80);      // #4CAF50
     public static final Color WARNING   = new Color(255, 179, 0);      // #FFB300
     public static final Color ERROR     = new Color(255, 82, 82);      // #FF5252
-    public static final Color INFO      = new Color(129, 212, 250);    // #81D4FA
-    public static final Color SUBTLE    = new Color(199, 206, 214);    // #C7CED6
-    public static final Color MUTED     = new Color(158, 158, 158);    // #9E9E9E
+    public static final Color INFO       = new Color(129, 212, 250);   // #81D4FA
+    public static final Color ACCENT_BLUE = new Color(30, 136, 229);   // #1E88E5 (button fill, white text)
+    public static final Color SUBTLE     = new Color(199, 206, 214);   // #C7CED6
+    public static final Color MUTED      = new Color(158, 158, 158);   // #9E9E9E
 
     // ── Fonts ───────────────────────────────────────────────────────────────
     public static final Font TITLE_FONT   = new Font("Segoe UI", Font.BOLD, 20);
@@ -72,6 +73,23 @@ public final class Theme {
         UIManager.put("Viewport.background", BG);
         UIManager.put("TextArea.background", BG_DARKER);
         UIManager.put("TextArea.foreground", FG);
+        UIManager.put("RadioButton.background", BG_DARKER);
+        UIManager.put("RadioButton.foreground", FG);
+        UIManager.put("RadioButton.font", SMALL_FONT);
+    }
+
+    // ── Text helpers ────────────────────────────────────────────────────────
+
+    /** Null-safe truncation: returns "" for null, otherwise clips to {@code max} chars with an ellipsis. */
+    public static String truncate(String s, int max) {
+        if (s == null) return "";
+        return s.length() <= max ? s : s.substring(0, max) + "...";
+    }
+
+    /** Escape a string for safe use inside an HTML label. */
+    public static String escapeHtml(String s) {
+        if (s == null) return "";
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     // ── Component Factories ─────────────────────────────────────────────────

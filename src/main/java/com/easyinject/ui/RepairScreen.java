@@ -9,8 +9,8 @@ import java.util.List;
 import javax.swing.*;
 
 /**
- * Diagnostic screen that checks each installation component and offers
- * targeted fixes. Placeholder IF clauses for future diagnostic messages.
+ * Diagnostic screen that checks each installation component (DLLs, Defender
+ * exclusion, pre-launch command, stable JAR) and offers targeted fixes.
  */
 public class RepairScreen extends InstallerWindow.ScreenPanel {
 
@@ -26,7 +26,7 @@ public class RepairScreen extends InstallerWindow.ScreenPanel {
     public RepairScreen(InstallerWindow window) {
         super(window);
         setLayout(new BorderLayout());
-        setBorder(BorderFactory.createEmptyBorder(16, 24, 16, 24));
+        setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
 
         JPanel body = Theme.createVBox();
 
@@ -112,7 +112,7 @@ public class RepairScreen extends InstallerWindow.ScreenPanel {
 
                 // ── Check 2: Defender exclusion ─────────────────────────
                 if (Main.isWindows()) {
-                    String exclusionsKey = "HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Exclusions\\Paths";
+                    String exclusionsKey = Main.DEFENDER_EXCLUSIONS_PATHS_KEY;
                     boolean dirExcluded = Main.isDefenderExclusionPresent(exclusionsKey, dllDir.getAbsolutePath());
                     File stableJar = window.getStableJar();
                     boolean jarExcluded = stableJar == null ||
@@ -133,7 +133,13 @@ public class RepairScreen extends InstallerWindow.ScreenPanel {
 
                 // ── Check 3: Pre-launch command ─────────────────────────
                 File config = window.getInstanceConfig();
-                if (config != null && config.exists()) {
+                if (window.getModrinthInstance() != null) {
+                    // Modrinth instances have no instance.cfg/json; the hook lives in
+                    // the Modrinth profile DB, so the file-based check does not apply.
+                    prelaunchOk = true;
+                    prelaunchHint = null;
+                    prelaunchDetail = "Managed via Modrinth profile";
+                } else if (config != null && config.exists()) {
                     try {
                         String existing = readExistingPrelaunch(config);
                         if (existing != null && !existing.isEmpty()) {
@@ -149,7 +155,7 @@ public class RepairScreen extends InstallerWindow.ScreenPanel {
                             if (!hasOur) {
                                 prelaunchHint = "Pre-launch command exists but does not contain " + window.getProjectName() + ".";
                             }
-                            prelaunchDetail = truncate(existing, 60);
+                            prelaunchDetail = Theme.truncate(existing, 60);
                         } else {
                             prelaunchOk = false;
                             prelaunchHint = "No pre-launch command configured.";
@@ -224,11 +230,6 @@ public class RepairScreen extends InstallerWindow.ScreenPanel {
         }
         reader.close();
         return result;
-    }
-
-    private String truncate(String s, int max) {
-        if (s == null) return "";
-        return s.length() <= max ? s : s.substring(0, max) + "...";
     }
 
     // ── Fix actions ─────────────────────────────────────────────────────
@@ -338,7 +339,7 @@ public class RepairScreen extends InstallerWindow.ScreenPanel {
             setBackground(Theme.BG);
             setOpaque(true);
             setBorder(BorderFactory.createEmptyBorder(8, 0, 8, 0));
-            setMaximumSize(new Dimension(Integer.MAX_VALUE, 55));
+            // No fixed max height: let BoxLayout size the row to title+status+detail.
             setAlignmentX(Component.LEFT_ALIGNMENT);
 
             iconLabel = new JLabel(Theme.pendingIcon());
@@ -404,9 +405,13 @@ public class RepairScreen extends InstallerWindow.ScreenPanel {
 
         void setDetail(String text) {
             if (text != null && !text.isEmpty()) {
-                detailLabel.setText(text);
+                // Truncate the single-line detail for display but keep the full
+                // text (often a long path) available as a tooltip.
+                detailLabel.setText(Theme.truncate(text, 64));
+                detailLabel.setToolTipText(text);
                 detailLabel.setVisible(true);
             } else {
+                detailLabel.setToolTipText(null);
                 detailLabel.setVisible(false);
             }
         }

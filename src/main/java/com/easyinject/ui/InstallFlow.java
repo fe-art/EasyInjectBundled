@@ -65,11 +65,24 @@ public class InstallFlow extends InstallerWindow.ScreenPanel {
 
     private void goToStep(int step) {
         stepIndicator.setCurrentStep(step);
+        JButton defaultBtn = null;
         switch (step) {
-            case 1: stepLayout.show(stepContent, STEP_SECURITY); break;
-            case 2: stepLayout.show(stepContent, STEP_INSTALL); installPanel.onShow(); break;
-            case 3: stepLayout.show(stepContent, STEP_DONE); break;
+            case 1:
+                stepLayout.show(stepContent, STEP_SECURITY);
+                defaultBtn = securityPanel.continueBtn;
+                break;
+            case 2:
+                stepLayout.show(stepContent, STEP_INSTALL);
+                installPanel.onShow();
+                defaultBtn = installPanel.installBtn;
+                break;
+            case 3:
+                stepLayout.show(stepContent, STEP_DONE);
+                break;
         }
+        // Set the step's primary button as the default so Enter activates it.
+        JRootPane rp = getRootPane();
+        if (rp != null) rp.setDefaultButton(defaultBtn);
         stepContent.revalidate();
         stepContent.repaint();
     }
@@ -79,7 +92,6 @@ public class InstallFlow extends InstallerWindow.ScreenPanel {
     // ═════════════════════════════════════════════════════════════════════
 
     private class StepIndicator extends JPanel {
-        private int currentStep = 1;
         private final String[] stepNames = {"Security", "Installation", "Done"};
         private final int[] stepStates = {0, 0, 0}; // 0=pending, 1=active, 2=complete, 3=error
 
@@ -90,7 +102,6 @@ public class InstallFlow extends InstallerWindow.ScreenPanel {
         }
 
         void setCurrentStep(int step) {
-            currentStep = step;
             for (int i = 0; i < stepStates.length; i++) {
                 if (i < step - 1) stepStates[i] = 2; // completed
                 else if (i == step - 1) stepStates[i] = 1; // active
@@ -286,7 +297,7 @@ public class InstallFlow extends InstallerWindow.ScreenPanel {
         SecurityStepPanel() {
             setLayout(new BorderLayout());
             setBackground(Theme.BG);
-            setBorder(BorderFactory.createEmptyBorder(16, 24, 16, 24));
+            setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
 
             JPanel body = Theme.createVBox();
 
@@ -370,7 +381,7 @@ public class InstallFlow extends InstallerWindow.ScreenPanel {
                     // Ensure DLL dir exists
                     if (!dllDir.exists()) dllDir.mkdirs();
 
-                    String exclusionsKey = "HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Exclusions\\Paths";
+                    String exclusionsKey = Main.DEFENDER_EXCLUSIONS_PATHS_KEY;
                     boolean dirExcluded = Main.isDefenderExclusionPresent(exclusionsKey, dllDir.getAbsolutePath());
                     boolean jarExcluded = jar == null || Main.isDefenderExclusionPresent(exclusionsKey,
                         Main.normalizePathForDefenderExclusionCheck(jar.getAbsolutePath()));
@@ -402,7 +413,7 @@ public class InstallFlow extends InstallerWindow.ScreenPanel {
             File dllDir = Main.getPreferredPersistentDllDir();
             defenderRow.setDetail("Folder: " + dllDir.getAbsolutePath());
 
-            JButton addBtn = Theme.createAccentButton("Add Exclusion", Theme.INFO);
+            JButton addBtn = Theme.createAccentButton("Add Exclusion", Theme.ACCENT_BLUE);
             addBtn.addActionListener(e -> {
                 defenderRow.clearActions();
                 defenderRow.setState(StatusRow.State.CHECKING, "Adding exclusion (UAC prompt)...");
@@ -486,7 +497,7 @@ public class InstallFlow extends InstallerWindow.ScreenPanel {
         InstallStepPanel() {
             setLayout(new BorderLayout());
             setBackground(Theme.BG);
-            setBorder(BorderFactory.createEmptyBorder(16, 24, 16, 24));
+            setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
 
             JPanel body = Theme.createVBox();
 
@@ -522,7 +533,7 @@ public class InstallFlow extends InstallerWindow.ScreenPanel {
             // ── Merge conflict panel (hidden by default) ────────────────
             mergePanel = Theme.createCard();
             mergePanel.setVisible(false);
-            mergePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 120));
+            // No fixed max height: size to content (title + command line + 2 radios).
 
             JLabel mergeTitle = Theme.createLabel("Existing Pre-Launch Command Detected", Theme.BODY_FONT, Theme.WARNING);
             mergeTitle.setIcon(Theme.warningIcon());
@@ -538,12 +549,16 @@ public class InstallFlow extends InstallerWindow.ScreenPanel {
             mergeKeep.setFont(Theme.SMALL_FONT);
             mergeKeep.setForeground(Theme.FG);
             mergeKeep.setBackground(Theme.BG_DARKER);
+            mergeKeep.setOpaque(true);
+            mergeKeep.setAlignmentX(Component.LEFT_ALIGNMENT);
             mergeKeep.setSelected(true);
 
             mergeReplace = new JRadioButton("Replace existing command");
             mergeReplace.setFont(Theme.SMALL_FONT);
             mergeReplace.setForeground(Theme.FG);
             mergeReplace.setBackground(Theme.BG_DARKER);
+            mergeReplace.setOpaque(true);
+            mergeReplace.setAlignmentX(Component.LEFT_ALIGNMENT);
 
             ButtonGroup mergeGroup = new ButtonGroup();
             mergeGroup.add(mergeKeep);
@@ -655,7 +670,7 @@ public class InstallFlow extends InstallerWindow.ScreenPanel {
                 }
                 if (hasExternal) {
                     hasConflict = true;
-                    mergeExisting.setText(truncate(existingPrelaunch, 80));
+                    mergeExisting.setText(Theme.truncate(existingPrelaunch, 80));
                     mergePanel.setVisible(true);
                 } else {
                     mergePanel.setVisible(false);
@@ -663,11 +678,6 @@ public class InstallFlow extends InstallerWindow.ScreenPanel {
             } else {
                 mergePanel.setVisible(false);
             }
-        }
-
-        private String truncate(String s, int max) {
-            if (s.length() <= max) return s;
-            return s.substring(0, max) + "...";
         }
 
         private void runInstall() {
@@ -725,8 +735,7 @@ public class InstallFlow extends InstallerWindow.ScreenPanel {
 
                         // Determine subfolder prefix
                         String subfolderPrefix = "";
-                        String dirName = jarDir.getName().toLowerCase();
-                        if (dirName.equals("minecraft") || dirName.equals(".minecraft")) {
+                        if (Main.isMinecraftDir(jarDir)) {
                             subfolderPrefix = jarDir.getName() + "/";
                         }
 
@@ -742,10 +751,26 @@ public class InstallFlow extends InstallerWindow.ScreenPanel {
                             prelaunchCommand = "\\\"$INST_JAVA\\\" -jar \\\"$INST_DIR/" + jarRelativePath + "\\\"";
                         }
 
-                        // Step 2: Resolve merge if conflict
+                        // Step 2: Resolve merge.
                         String resolvedCommand = prelaunchCommand;
-                        if (hasConflict && existingPrelaunch != null) {
-                            int mergeChoice = mergeKeep.isSelected() ? 0 : 1;
+                        if (isJson) {
+                            // ATLauncher (.json) path is unchanged: only resolve on conflict.
+                            if (hasConflict && existingPrelaunch != null) {
+                                int mergeChoice = mergeKeep.isSelected() ? 0 : 1;
+                                Main.MergeResult mr = Main.resolvePrismPreLaunchCommandNoUi(
+                                    existingPrelaunch, prelaunchCommand, mergeChoice);
+                                if (!mr.proceed) {
+                                    return "Installation cancelled.";
+                                }
+                                resolvedCommand = mr.mergedCommand;
+                            }
+                        } else {
+                            // Prism/MultiMC (.cfg) path: ALWAYS route through the resolver so a
+                            // previously-forwarded external command absorbed into our existing
+                            // segment is preserved across re-installs.
+                            // choice = replace (1) only when a real conflict exists and the user
+                            // explicitly chose Replace; otherwise keep (0).
+                            int mergeChoice = (hasConflict && mergeReplace.isSelected()) ? 1 : 0;
                             Main.MergeResult mr = Main.resolvePrismPreLaunchCommandNoUi(
                                 existingPrelaunch, prelaunchCommand, mergeChoice);
                             if (!mr.proceed) {
@@ -891,15 +916,22 @@ public class InstallFlow extends InstallerWindow.ScreenPanel {
             add(center, BorderLayout.CENTER);
 
             actionButtons = new JPanel(new FlowLayout(FlowLayout.CENTER, 12, 0));
+            // (detail text is set via setDetailText so long messages wrap.)
             actionButtons.setBackground(Theme.BG);
             add(actionButtons, BorderLayout.SOUTH);
+        }
+
+        /** Set the centered detail text as a fixed-width HTML label so long messages wrap. */
+        private void setDetailText(String text) {
+            detailLabel.setText("<html><div style='width:440px; text-align:center'>"
+                + Theme.escapeHtml(text) + "</div></html>");
         }
 
         void showSuccess() {
             iconLabel.setIcon(Theme.largeSuccessIcon());
             messageLabel.setText(window.getProjectName() + " Installed Successfully!");
             messageLabel.setForeground(Theme.SUCCESS);
-            detailLabel.setText("Instance: " + window.getInstanceName()
+            setDetailText("Instance: " + window.getInstanceName()
                 + "  \u2022  You can now launch Minecraft from your launcher.");
 
             actionButtons.removeAll();
@@ -907,7 +939,7 @@ public class InstallFlow extends InstallerWindow.ScreenPanel {
             // Discord CTA
             String discordUrl = Main.getDiscordUrl();
             if (discordUrl != null && !discordUrl.isEmpty()) {
-                JButton discordBtn = Theme.createAccentButton("Join Discord", Theme.INFO);
+                JButton discordBtn = Theme.createAccentButton("Join Discord", Theme.ACCENT_BLUE);
                 discordBtn.addActionListener(e -> {
                     try {
                         Desktop.getDesktop().browse(new URI(discordUrl));
@@ -932,7 +964,7 @@ public class InstallFlow extends InstallerWindow.ScreenPanel {
             iconLabel.setIcon(Theme.largeErrorIcon());
             messageLabel.setText("Installation Failed");
             messageLabel.setForeground(Theme.ERROR);
-            detailLabel.setText(error != null ? error : "An unknown error occurred.");
+            setDetailText(error != null ? error : "An unknown error occurred.");
 
             actionButtons.removeAll();
 

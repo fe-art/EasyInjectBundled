@@ -20,6 +20,7 @@ public class UninstallScreen extends InstallerWindow.ScreenPanel {
     private final JLabel doneIcon;
     private final JLabel doneMessage;
     private final JLabel doneDetail;
+    private final JButton confirmUninstallBtn;
 
     public UninstallScreen(InstallerWindow window) {
         super(window);
@@ -32,7 +33,7 @@ public class UninstallScreen extends InstallerWindow.ScreenPanel {
 
         // ── Confirm view ────────────────────────────────────────────────
         JPanel confirmView = Theme.createVBox();
-        confirmView.setBorder(BorderFactory.createEmptyBorder(20, 0, 0, 0));
+        // Top padding comes from the screen's EmptyBorder(20,...); no extra inset here.
 
         JLabel title = Theme.createLabel("Uninstall " + window.getProjectName(), Theme.HEADING_FONT, Theme.FG);
         confirmView.add(title);
@@ -59,11 +60,11 @@ public class UninstallScreen extends InstallerWindow.ScreenPanel {
         JButton cancelBtn = Theme.createButton("Cancel");
         cancelBtn.addActionListener(e -> window.showScreen(InstallerWindow.SCREEN_HOME));
 
-        JButton uninstallBtn = Theme.createAccentButton("Uninstall", Theme.ERROR);
-        uninstallBtn.addActionListener(e -> runUninstall());
+        confirmUninstallBtn = Theme.createAccentButton("Uninstall", Theme.ERROR);
+        confirmUninstallBtn.addActionListener(e -> runUninstall());
 
         confirmButtons.add(cancelBtn);
-        confirmButtons.add(uninstallBtn);
+        confirmButtons.add(confirmUninstallBtn);
         confirmView.add(confirmButtons);
 
         viewPanel.add(confirmView, VIEW_CONFIRM);
@@ -125,6 +126,8 @@ public class UninstallScreen extends InstallerWindow.ScreenPanel {
     @Override
     public void onShow() {
         viewLayout.show(viewPanel, VIEW_CONFIRM);
+        JRootPane rp = getRootPane();
+        if (rp != null) rp.setDefaultButton(confirmUninstallBtn);
     }
 
     private void runUninstall() {
