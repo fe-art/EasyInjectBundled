@@ -1,0 +1,9 @@
+[
+  {"interfaces": ["com.easyinject.WindowsNative$Kernel32Ex"]},
+  {"interfaces": ["com.easyinject.WindowsNative$Kernel32Ascii"]},
+  {"interfaces": ["com.easyinject.WindowsNative$User32Ex"]},
+  {"interfaces": ["com.easyinject.WindowsNative$User32Ex$WNDENUMPROC"]},
+  {"interfaces": ["com.easyinject.WindowsNative$NtDll"]},
+  {"interfaces": ["com.sun.jna.platform.win32.Kernel32"]},
+  {"interfaces": ["com.sun.jna.platform.win32.Shell32"]}
+]

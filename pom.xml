@@ -209,4 +209,52 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>native</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.graalvm.buildtools</groupId>
+                        <artifactId>native-maven-plugin</artifactId>
+                        <version>1.1.2</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <metadataRepository>
+                                <enabled>true</enabled>
+                            </metadataRepository>
+                            <buildArgs>
+                                <buildArg>-O3</buildArg>
+                            </buildArgs>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>build-installer</id>
+                                <goals>
+                                    <goal>compile-no-fork</goal>
+                                </goals>
+                                <phase>package</phase>
+                                <configuration>
+                                    <mainClass>com.easyinject.Main</mainClass>
+                                    <imageName>${brand.name}-${brand.version}-double-click-me</imageName>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>build-downloader</id>
+                                <goals>
+                                    <goal>compile-no-fork</goal>
+                                </goals>
+                                <phase>package</phase>
+                                <configuration>
+                                    <mainClass>com.easyinject.ToolscreenInstallerMain</mainClass>
+                                    <imageName>toolscreen-downloader</imageName>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

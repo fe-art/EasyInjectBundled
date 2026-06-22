@@ -52,9 +52,9 @@ public class DllInjector {
         }
         long dllSize = dllPath.toFile().length();
 
-        // Open target process with all access
         HANDLE hProcess = kernel32.OpenProcess(
-            WindowsNative.PROCESS_ALL_ACCESS,
+            WindowsNative.PROCESS_VM_WRITE | WindowsNative.PROCESS_VM_OPERATION
+                | WindowsNative.PROCESS_CREATE_THREAD | WindowsNative.SYNCHRONIZE,
             false,
             processId
         );

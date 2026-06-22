@@ -1,0 +1,49 @@
+name: Build Native Executables
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-native-windows:
+    runs-on: windows-2025
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: 'graalvm-community'
+          cache: 'maven'
+          native-image-job-reports: 'true'
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build native executables
+        run: mvn -Pnative -q --batch-mode --no-transfer-progress package
+
+      - name: Verify native binaries
+        shell: pwsh
+        run: |
+          $files = @("target/toolscreen-downloader.exe") + `
+            (Get-ChildItem -Path target -Filter "*-double-click-me.exe" | Select-Object -ExpandProperty FullName)
+          foreach ($path in $files) {
+            $f = Get-Item $path -ErrorAction Stop
+            if ($f.Length -lt 1MB) {
+              Write-Error "Binary $($f.Name) is suspiciously small ($($f.Length) bytes)"
+              exit 1
+            }
+            Write-Host "OK: $($f.Name) ($($f.Length) bytes)"
+          }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-windows
+          path: |
+            target/*-double-click-me.exe
+            target/toolscreen-downloader.exe
+          if-no-files-found: error

@@ -13,7 +13,9 @@ set "EASYINJECT_DIR=%~dp0"
 set "DLL_DEST_DIR=%EASYINJECT_DIR%custom-dlls"
 set "DLL_DEST=%DLL_DEST_DIR%\Toolscreen.dll"
 
-set "JAR_SRC=%EASYINJECT_DIR%target\Toolscreen-1.0.9-double-click-me.jar"
+set "BRAND_VERSION=1.0"
+for /f "tokens=1,* delims==" %%a in ('findstr /b "brand.version=" "%EASYINJECT_DIR%branding.properties" 2^>nul') do set BRAND_VERSION=%%b
+set "JAR_SRC=%EASYINJECT_DIR%target\Toolscreen-%BRAND_VERSION%-double-click-me.jar"
 set "JAR_DEST_DIR=J:\MultiMC\instances\zWallMod"
 set "JAR_DEST=%JAR_DEST_DIR%\Toolscreen.jar"
 set "JAR_FALLBACK=%JAR_DEST_DIR%\Toolscreen-new.jar"

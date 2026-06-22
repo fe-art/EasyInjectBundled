@@ -1,0 +1,62 @@
+[
+  {
+    "name": "com.easyinject.WindowsNative$PROCESSENTRY32",
+    "allDeclaredFields": true,
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true
+  },
+  {
+    "name": "com.easyinject.WindowsNative$PROCESSENTRY32$ByReference",
+    "allDeclaredFields": true,
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "com.easyinject.WindowsNative$PROCESS_BASIC_INFORMATION",
+    "allDeclaredFields": true,
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true
+  },
+  {
+    "name": "com.easyinject.WindowsNative$PROCESS_BASIC_INFORMATION$ByReference",
+    "allDeclaredFields": true,
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "com.easyinject.WindowsNative$RTL_USER_PROCESS_PARAMETERS",
+    "allDeclaredFields": true,
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true
+  },
+  {
+    "name": "com.easyinject.WindowsNative$RTL_USER_PROCESS_PARAMETERS$ByReference",
+    "allDeclaredFields": true,
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "com.easyinject.WindowsNative$UNICODE_STRING",
+    "allDeclaredFields": true,
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true
+  },
+  {
+    "name": "com.easyinject.WindowsNative$UNICODE_STRING$ByReference",
+    "allDeclaredFields": true,
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "com.easyinject.WindowsNative$PEB",
+    "allDeclaredFields": true,
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true
+  },
+  {
+    "name": "com.easyinject.WindowsNative$PEB$ByReference",
+    "allDeclaredFields": true,
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "com.sun.jna.platform.win32.ShellAPI$SHELLEXECUTEINFO",
+    "allDeclaredFields": true,
+    "allDeclaredConstructors": true
+  }
+]

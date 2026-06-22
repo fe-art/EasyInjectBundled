@@ -26,6 +26,7 @@ public class WindowsNative {
     public static final int PROCESS_VM_WRITE = 0x0020;
     public static final int PROCESS_VM_OPERATION = 0x0008;
     public static final int PROCESS_CREATE_THREAD = 0x0002;
+    public static final int SYNCHRONIZE = 0x00100000;
 
     // Memory allocation constants
     public static final int MEM_COMMIT = 0x1000;
